@@ -64,7 +64,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
 	unsigned short router_id;
 	eProtocolType protocol_type;
 	instruction instr[2];
-	hash_map<unsigned short, struct port_status_entry*> port_status_table;
+	vector<struct port_status_entry*> port_status_table;
 };
 
 #endif

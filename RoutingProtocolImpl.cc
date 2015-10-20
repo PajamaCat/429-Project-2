@@ -21,6 +21,7 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 	this->router_id = router_id;
 	this->protocol_type = protocol_type;
 
+	std:cout<<"My Router ID is "<<router_id<<"\n";
 	this->sendPingMsg();
 }
 
@@ -35,6 +36,7 @@ void RoutingProtocolImpl::handle_alarm(void *data) {
 
 void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short size) {
   // add your own code
+
 	std::cout<<"received a ping\n";
 
 	unsigned int pkt_type = *((unsigned char *)packet);
@@ -44,33 +46,40 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 //		header.dst = header.src;
 //		header.src = router_id;
 		memset(&header->type, PONG, sizeof(header->type));
-		memset(&header->dst, header->src, sizeof(header->dst));
-		memset(&header->src, htons(router_id), sizeof(header->src));
+		memcpy(&header->dst, &header->src, sizeof(header->dst));
+		int htons_id = htons(router_id);
+		memcpy(&header->src, &htons_id, sizeof(header->src));
 
 		unsigned int newbla = *((unsigned char *)packet);
-		std::cout<<"packet type"<<newbla<<"\n";
+		std::cout<<"header.dst "<<ntohs(header->dst)<<" header.src "<<ntohs(header->src)<<"\n";
 		sys->send(port, packet, size);
 
 		std::cout<<"PONGPONGPONG"<<"\n";
 	} else if (pkt_type == PONG) {
 		std::cout<<"RECEIVED PONG"<<"\n";
-//		header = (msg_header *)packet;
-//
-//		port_status_entry *en;
-//
-//		if (port_status_table.find(header->src) == port_status_table.end()) { // If this neighbor ID is not in port_status_table
-//			en = (struct port_status_entry *) malloc(sizeof(struct port_status_entry));
-//			en->neighbor_id = header->src;
-//			port_status_table[header->src] = en;
-//		} else {
-//			en = port_status_table[header->src];
-//		}
-//		unsigned int current_time = sys->time();
-//		unsigned int neighbor_time = *((unsigned int *)packet + sizeof(header));
-//		en->last_update = current_time;
-//		en->cost = current_time - ntohs(neighbor_time);
-//		en->port = port;
-//		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
+		header = (msg_header *)packet;
+
+		port_status_entry *en = NULL;
+
+		for (unsigned int i = 0; i < port_status_table.size(); i++) {
+			if(port_status_table[i]->neighbor_id == header->src) {
+				en = port_status_table[i];
+			}
+		}
+
+		if (en == NULL) {
+			en = (struct port_status_entry *) malloc(sizeof(struct port_status_entry));
+			en->neighbor_id = ntohs(header->src);
+			port_status_table.push_back(en);
+		}
+
+
+		unsigned int current_time = sys->time();
+		unsigned int neighbor_time = *((unsigned int *)packet + sizeof(header));
+		en->last_update = current_time;
+		en->cost = current_time - ntohs(neighbor_time);
+		en->port = port;
+		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
 	}
 }
 

@@ -35,6 +35,7 @@ void RoutingProtocolImpl::handle_alarm(void *data) {
 
 void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short size) {
   // add your own code
+
 	std::cout<<"received a ping\n";
 
 	unsigned int pkt_type = *((unsigned char *)packet);
@@ -54,23 +55,23 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		std::cout<<"PONGPONGPONG"<<"\n";
 	} else if (pkt_type == PONG) {
 		std::cout<<"RECEIVED PONG"<<"\n";
-//		header = (msg_header *)packet;
-//
-//		port_status_entry *en;
-//
-//		if (port_status_table.find(header->src) == port_status_table.end()) { // If this neighbor ID is not in port_status_table
-//			en = (struct port_status_entry *) malloc(sizeof(struct port_status_entry));
-//			en->neighbor_id = header->src;
-//			port_status_table[header->src] = en;
-//		} else {
-//			en = port_status_table[header->src];
-//		}
-//		unsigned int current_time = sys->time();
-//		unsigned int neighbor_time = *((unsigned int *)packet + sizeof(header));
-//		en->last_update = current_time;
-//		en->cost = current_time - ntohs(neighbor_time);
-//		en->port = port;
-//		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
+		header = (msg_header *)packet;
+
+		port_status_entry *en;
+
+		if (port_status_table.find(header->src) == port_status_table.end()) { // If this neighbor ID is not in port_status_table
+			en = (struct port_status_entry *) malloc(sizeof(struct port_status_entry));
+			en->neighbor_id = header->src;
+			port_status_table.insert(header->src, en);
+		} else {
+			en = port_status_table[header->src];
+		}
+		unsigned int current_time = sys->time();
+		unsigned int neighbor_time = *((unsigned int *)packet + header);
+		en->last_update = current_time;
+		en->cost = current_time - ntohs(neighbor_time);
+		en->port = port;
+		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
 	}
 }
 

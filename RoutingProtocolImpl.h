@@ -10,6 +10,18 @@ struct port_status_entry {
 	unsigned short port;
 };
 
+struct forwarding_table {
+	unsigned short dest_id;
+	unsigned short next_hop_id;
+	unsigned short port;
+};
+
+struct distance_vector {
+	unsigned short dest_id;
+	unsigned short cost;
+	unsigned short last_update;
+};
+
 struct msg_header {
   unsigned char type;
   unsigned char reserved;

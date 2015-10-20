@@ -80,6 +80,8 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		en->cost = current_time - ntohs(neighbor_time);
 		en->port = port;
 		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
+	} else if (pkt_type == DATA){
+
 	}
 }
 

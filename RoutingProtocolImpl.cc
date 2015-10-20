@@ -5,6 +5,7 @@
 
 RoutingProtocolImpl::RoutingProtocolImpl(Node *n) : RoutingProtocol(n) {
   sys = n;
+  instr = {SEND_PING, SEND_DV};
   // add your own code
 }
 
@@ -23,6 +24,14 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 
 void RoutingProtocolImpl::handle_alarm(void *data) {
   // add your own code
+//	instruction *ins = (instruction *) malloc(sizeof(instruction));
+//	memcpy(ins, data, sizeof(ins));
+
+	if (memcmp(data, &instr[SEND_PING], sizeof(instruction)) == 0) {
+		std::cout << "MIAO" << "\n";
+
+	}
+
 }
 
 void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short size) {
@@ -51,6 +60,8 @@ void RoutingProtocolImpl::sendPingMsg() {
     for (unsigned short i = 0; i < num_ports; i++) {
     	sys->send(i, msg, sizeof(msg));
     }
+
+    sys->set_alarm(this, 1000, &instr[SEND_PING]);
 
     delete pkt;
 

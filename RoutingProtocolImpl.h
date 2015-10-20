@@ -11,10 +11,10 @@ struct msg_header {
   unsigned short dst;
 };
 
-//struct ping_msg {
-//	struct msg_header;
-//	unsigned int time_stamp;
-//};
+enum instruction {
+  SEND_PING,
+  SEND_DV,
+};
 
 class RoutingProtocolImpl : public RoutingProtocol {
   public:
@@ -56,6 +56,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     unsigned short num_ports;
 	unsigned short router_id;
 	eProtocolType protocol_type;
+	instruction instr[2];
 };
 
 #endif

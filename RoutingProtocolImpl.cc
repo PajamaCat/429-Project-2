@@ -3,6 +3,8 @@
 #include "Node.h"
 #include "RoutingProtocolImpl.h"
 
+#define PING_INTERVAL 10000  // 10 secs
+
 RoutingProtocolImpl::RoutingProtocolImpl(Node *n) : RoutingProtocol(n) {
   sys = n;
   instr = {SEND_PING, SEND_DV};
@@ -24,23 +26,32 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 
 void RoutingProtocolImpl::handle_alarm(void *data) {
   // add your own code
-//	instruction *ins = (instruction *) malloc(sizeof(instruction));
-//	memcpy(ins, data, sizeof(ins));
 
 	if (memcmp(data, &instr[SEND_PING], sizeof(instruction)) == 0) {
-		std::cout << "MIAO" << "\n";
-
+		this->sendPingMsg();
 	}
 
 }
 
 void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short size) {
   // add your own code
-	struct msg_header *pkt = (struct msg_header *) malloc(sizeof(struct msg_header));
-	memcpy(pkt, packet, sizeof(pkt));
-//
-	if (pkt->type == (unsigned char) PING) {
-		std::cout << "YAY" <<"\n";
+	unsigned int pkt_type = *((unsigned char *)packet);
+
+	if (pkt_type == PING) {
+		msg_header *header = (msg_header *)packet;
+//		header.dst = header.src;
+//		header.src = router_id;
+		memset(&header->type, PONG, sizeof(header->type));
+		memset(&header->dst, header->src, sizeof(header->dst));
+		memset(&header->src, router_id, sizeof(header->src));
+
+		unsigned int newbla = *((unsigned char *)packet);
+		std::cout<<"packet type"<<newbla<<"\n";
+		sys->send(port, packet, size);
+
+		std::cout<<"PONGPONGPONG"<<"\n";
+	} else if (pkt_type == PONG) {
+		std::cout<<"RECEIVED PONG"<<"\n";
 	}
 }
 
@@ -61,7 +72,7 @@ void RoutingProtocolImpl::sendPingMsg() {
     	sys->send(i, msg, sizeof(msg));
     }
 
-    sys->set_alarm(this, 1000, &instr[SEND_PING]);
+    sys->set_alarm(this, 10000, &instr[SEND_PING]);
 
     delete pkt;
 

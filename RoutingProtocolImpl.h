@@ -3,6 +3,19 @@
 
 #include "RoutingProtocol.h"
 
+struct msg_header {
+  unsigned char type;
+  unsigned char reserved;
+  unsigned short size;
+  unsigned short src;
+  unsigned short dst;
+};
+
+//struct ping_msg {
+//	struct msg_header;
+//	unsigned int time_stamp;
+//};
+
 class RoutingProtocolImpl : public RoutingProtocol {
   public:
     RoutingProtocolImpl(Node *n);
@@ -35,8 +48,14 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // that the packet is generated locally and not received from 
     // a neighbor router.
 
+    void sendPingMsg();
+    // send ping messages
+
  private:
     Node *sys; // To store Node object; used to access GSR9999 interfaces 
+    unsigned short num_ports;
+	unsigned short router_id;
+	eProtocolType protocol_type;
 };
 
 #endif

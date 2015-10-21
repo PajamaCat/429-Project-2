@@ -67,8 +67,17 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // that the packet is generated locally and not received from 
     // a neighbor router.
 
-    void sendPingMsg();
+    void send_ping_msg();
     // send ping messages
+
+    void check_entries();
+    // check expired entries in port_status_table and ...
+
+    void updateDV_from_cost_change(unsigned short neighbor_id, unsigned int update_val);
+
+    void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
+    // delete entry whose next hop is neighbor_id in forwarding table
+
 
  private:
     Node *sys; // To store Node object; used to access GSR9999 interfaces 

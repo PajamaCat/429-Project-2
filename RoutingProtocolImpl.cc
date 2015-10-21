@@ -91,7 +91,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 //		}
 		// update DV if cost with neighbor changes
 		if (new_cost != en->cost) {
-			updateDV_from_cost_change(en->neighbor_id, new_cost);
+			updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
 		}
 
 		// Initializing for forwarding table from DV
@@ -134,8 +134,43 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 				sys->send(ft_en->port, packet, header->size);
 			}
 		}
+	} else if (pkt_type == DV) {
+		header = (msg_header *)packet;
+		unsigned short neighbor_id = header->src;
+		unsigned int current_time = sys->time();
+
+		vector<node_cost*> node_cost_vec = *((unsigned int *)packet + sizeof(header));
+		vector<struct node_cost*>::iterator dv_packet_iter = node_cost_vec.begin();
+		while(dv_packet_iter != node_cost_vec.end()) {
+			if(!dv_contains_dest((* dv_packet_iter)->node_id) {
+				// add new distance vector entry (with new destination)
+				dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
+				memcpy(&dv_en->dest_id, &((* dv_packet_iter)->node_id), sizeof(en->neighbor_id));
+				memcpy(&dv_en->port, &port, sizeof(port));
+				memcpy(&dv_en->next_hop_id, &neighbor_id, sizeof(en->neighbor_id));
+				memcpy(&dv_en->last_update, &current_time, sizeof(current_time));
+				dv_table.push_back(dv_en);
+			} else {
+				// try to compare and update the existing distance vector entry
+				unsigned short new_cost = (* dv_packet_iter)->cost + get_dv_entry_by_dest(neighbor_id)->cost;
+				dv_entry *old_dv_entry = get_dv_entry_by_dest((* dv_packet_iter)->dest_id);
+				if(old_dv_entry->cost > new_cost) {
+					// make path to dest have this neighbor as next hop.
+					old_dv_entry->cost = new_cost;
+					old_dv_entry->next_hop_id = neighbor_id;
+					old_dv_entry->port = port;
+					old_dv_entry->last_update = current_time
+				}
+			}
+		}
+	
 
 	}
+}
+
+void RoutingProtocolImpl::updateDV_from_DV_msg(
+		unsigned short neighbor_id, struct dv_msg_body* dv_msg) {
+	//TODO:
 }
 
 void RoutingProtocolImpl::send_ping_msg() {
@@ -199,8 +234,8 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 		// update all costs in entries with nextHop as neighbor_id to infinity
 		for (unsigned int i = 0; i < dv_table.size(); i++) {
 			if (dv_table[i]->next_hop_id == neighbor_id) {
-				memcpy(&dv_table[i]->cost, &update_val, sizeof(update_val));
-				memcpy(&dv_table[i]->last_update, &cur_time, sizeof(cur_time));
+				dv_table[i]->cost = update_val;
+				dv_table[i]->last_update = cur_time;
 			}
 		}
 	} else {
@@ -210,32 +245,12 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 		// cast new DV to neighbors)
 		for (unsigned int i = 0; i < dv_table.size(); i++) {
 			if (dv_table[i]->next_hop_id == neighbor_id) {
-				port_status_entry* nbr_entry = get_nbr_port_status_entry(dv_table[i]->dest_id);
-
-				// re-route directly to nbr
-				if (nbr_entry != NULL) {
-					if (nbr_entry->cost < update_val) {
-						memcpy(&dv_table[i]->next_hop_id,
-								&nbr_entry->neighbor_id,
-								sizeof(nbr_entry->neighbor_id));
-						memcpy(&dv_table[i]->cost, &nbr_entry->cost, sizeof(nbr_entry->cost));
-						memcpy(&dv_table[i]->port, &nbr_entry->port, sizeof(nbr_entry->port));
-						memcpy(&dv_table[i]->last_update, &cur_time, sizeof(cur_time));
-						send_DV_msg(dv_table[i]);
-						continue;
-					}
-				}
-				memcpy(&dv_table[i]->cost, &update_val, sizeof(update_val));
-				memcpy(&dv_table[i]->last_update, &cur_time, sizeof(cur_time));
+				dv_table[i]->cost = dv_table[i]->cost + update_val;
+				dv_table[i]->last_update = cur_time;
 				send_DV_msg(dv_table[i]);
 			}
 		}
 	}
-}
-
-void RoutingProtocolImpl::updateDV_from_DV_msg(
-		unsigned short neighbor_id, struct dv_msg_body* dv_msg) {
-	//TODO:
 }
 
 port_status_entry* RoutingProtocolImpl::get_nbr_port_status_entry(unsigned int neighbor_id) {

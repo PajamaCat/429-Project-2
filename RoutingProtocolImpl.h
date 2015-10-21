@@ -16,10 +16,21 @@ struct forwarding_table {
 	unsigned short port;
 };
 
-struct distance_vector {
+struct dv_entry {
 	unsigned short dest_id;
 	unsigned short cost;
+	unsigned short next_hop_id;
+	unsigned short port;
 	unsigned short last_update;
+};
+
+struct node_cost {
+	unsigned short node_id;
+	unsigned short cost;
+};
+
+struct dv_msg_body {
+	vector<struct node_cost*> id_cost_pair;
 };
 
 struct msg_header {
@@ -76,9 +87,16 @@ class RoutingProtocolImpl : public RoutingProtocol {
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned int update_val);
 
+    void updateDV_from_DV_msg(unsigned short sender_id, struct dv_msg_body* dv_msg);
+
     void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
     // delete entry whose next hop is neighbor_id in forwarding table
 
+    void send_DV_msg(dv_entry* entry);
+
+    port_status_entry* get_nbr_port_status_entry(unsigned int neighbor_id);
+
+    bool dv_contains_dest(unsigned int node_id);
 
  private:
     Node *sys; // To store Node object; used to access GSR9999 interfaces 
@@ -86,6 +104,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
 	unsigned short router_id;
 	eProtocolType protocol_type;
 	vector<struct port_status_entry*> port_status_table;
+	vector<struct dv_entry*> dv_table;
 };
 
 #endif

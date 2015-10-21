@@ -4,33 +4,33 @@
 #include "RoutingProtocol.h"
 
 struct port_status_entry {
-	unsigned short neighbor_id;
-	unsigned short cost;
-	unsigned int last_update;
-	unsigned short port;
+    unsigned short neighbor_id;
+    unsigned short cost;
+    unsigned int last_update;
+    unsigned short port;
 };
 
-struct forwarding_table {
-	unsigned short dest_id;
-	unsigned short next_hop_id;
-	unsigned short port;
+struct forwarding_table_entry {
+    unsigned short dest_id;
+    unsigned short next_hop_id;
+    unsigned short port;
 };
 
 struct dv_entry {
-	unsigned short dest_id;
-	unsigned short cost;
-	unsigned short next_hop_id;
-	unsigned short port;
-	unsigned short last_update;
+    unsigned short dest_id;
+    unsigned short cost;
+    unsigned short next_hop_id;
+    unsigned short port;
+    unsigned short last_update;
 };
 
 struct node_cost {
-	unsigned short node_id;
-	unsigned short cost;
+    unsigned short node_id;
+    unsigned short cost;
 };
 
 struct dv_msg_body {
-	vector<struct node_cost*> id_cost_pair;
+    vector<struct node_cost*> id_cost_pair;
 };
 
 struct msg_header {
@@ -98,13 +98,23 @@ class RoutingProtocolImpl : public RoutingProtocol {
 
     bool dv_contains_dest(unsigned int node_id);
 
+    bool ft_contains_dest(unsigned int node_id);
+
+    dv_entry* get_dv_entry_by_dest(unsigned int node_id);
+
+    forwarding_table_entry* get_ft_entry_by_dest(unsigned int node_id);
+
+    void remove_ft_entry_by_port(unsigned short port);
+    void remove_ft_entry_by_dest(unsigned short dest);
+
  private:
     Node *sys; // To store Node object; used to access GSR9999 interfaces 
     unsigned short num_ports;
-	unsigned short router_id;
-	eProtocolType protocol_type;
-	vector<struct port_status_entry*> port_status_table;
-	vector<struct dv_entry*> dv_table;
+    unsigned short router_id;
+    eProtocolType protocol_type;
+    vector<struct port_status_entry*> port_status_table;
+    vector<struct dv_entry*> dv_table;
+    vector<struct forwarding_table_entry*> forwarding_table;
 };
 
 #endif

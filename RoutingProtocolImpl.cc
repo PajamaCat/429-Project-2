@@ -74,6 +74,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			port_status_table.push_back(en);
 		}
 
+		// Initializing for distance vector
 		if (!dv_contains_dest(en->neighbor_id)) {
 			dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
 			memcpy(&dv_en->dest_id, &en->neighbor_id, sizeof(en->neighbor_id));
@@ -82,6 +83,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			memcpy(&dv_en->last_update, &current_time, sizeof(current_time));
 			dv_table.push_back(dv_en);
 		}
+
 
 //		for (unsigned int i = 0; i < dv_table.size(); i++) {
 //			std::cout<<"dest_id "<<dv_table[i]->dest_id<<" "<<"cost "<<dv_table[i]->cost<<" "
@@ -92,6 +94,21 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			updateDV_from_cost_change(en->neighbor_id, new_cost);
 		}
 
+		// Initializing for forwarding table from DV
+		forwarding_table_entry* ft_en;
+		dv_entry* dv_en = get_dv_entry_by_dest(en->neighbor_id);
+		if (!ft_contains_dest(en->neighbor_id)) {
+			ft_en = (struct forwarding_table_entry*) malloc(sizeof(struct forwarding_table_entry));
+			memcpy(&ft_en->dest_id, &en->neighbor_id, sizeof(en->neighbor_id));
+			memcpy(&ft_en->port, &dv_en->port, sizeof(port));
+			memcpy(&ft_en->next_hop_id, &dv_en->next_hop_id, sizeof(en->neighbor_id));
+			forwarding_table.push_back(ft_en);
+		} else {
+			ft_en = get_ft_entry_by_dest(en->neighbor_id);
+			memcpy(&ft_en->port, &dv_en->port, sizeof(port));
+			memcpy(&ft_en->next_hop_id, &dv_en->next_hop_id, sizeof(en->neighbor_id));
+		}
+
 		en->last_update = current_time;
 		en->cost = new_cost;
 		en->port = port;
@@ -99,7 +116,25 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		free(packet);	// free packet
 		std::cout<<"ENTRY: "<<en->last_update<<" "<<en->neighbor_id<<"\n";
 	} else if (pkt_type == DATA){
-		//TODO:
+
+		header = (msg_header *)packet;
+		if (port == 0xffff) {
+			// The package originated from this router
+			header->src = router_id; // Make sure source is this router
+		}
+
+		if(header->dst == router_id) {
+			// Free packet memory when it is at destination.
+			free(packet);
+		} else {
+			forwarding_table_entry *ft_en = get_ft_entry_by_dest(header->dst);
+			if (ft_en == NULL) {
+				std::cout << "No forwarding table entry for destination router " << header->dst << "\n";
+			} else {
+				sys->send(ft_en->port, packet, header->size);
+			}
+		}
+
 	}
 }
 
@@ -134,7 +169,7 @@ void RoutingProtocolImpl::check_entries() {
 	while (port_iter != port_status_table.end()) {
 		if (cur_time - (*port_iter)->last_update > PORT_STATUS_TIMEOUT) {
 			updateDV_from_cost_change((*port_iter)->neighbor_id, std::numeric_limits<int>::max());
-			//TODO: update ft
+			remove_ft_entry_by_port((*port_iter)->port);
 			port_iter = port_status_table.erase(port_iter);
 		} else {
 			++port_iter;
@@ -146,7 +181,7 @@ void RoutingProtocolImpl::check_entries() {
 	while (dv_iter != dv_table.end()) {
 		if (cur_time - (*dv_iter)->last_update > DV_TIMEOUT) {
 			dv_iter = dv_table.erase(dv_iter);
-			//TODO: update ft
+			remove_ft_entry_by_dest((*dv_iter)->dest_id); // is this needed?
 		} else {
 			++dv_iter;
 		}
@@ -217,6 +252,52 @@ bool RoutingProtocolImpl::dv_contains_dest(unsigned int node_id) {
 			return true;
 	}
 	return false;
+}
+
+bool RoutingProtocolImpl::ft_contains_dest(unsigned int node_id) {
+	for (unsigned int i = 0; i < forwarding_table.size(); i++) {
+		if (forwarding_table[i]->dest_id == node_id)
+			return true;
+	}
+	return false;
+}
+
+dv_entry* RoutingProtocolImpl::get_dv_entry_by_dest(unsigned int node_id) {
+	for (unsigned int i = 0; i < dv_table.size(); i++) {
+		if (dv_table[i]->dest_id == node_id)
+			return dv_table[i];
+	}
+	return NULL;
+}
+
+forwarding_table_entry* RoutingProtocolImpl::get_ft_entry_by_dest(unsigned int node_id) {
+	for (unsigned int i = 0; i < forwarding_table.size(); i++) {
+		if (forwarding_table[i]->dest_id == node_id)
+			return forwarding_table[i];
+	}
+	return NULL;
+}
+
+void RoutingProtocolImpl::remove_ft_entry_by_port(unsigned short port) {
+	vector<struct forwarding_table_entry*>::iterator ft_iter = forwarding_table.begin();
+	while(ft_iter != forwarding_table.end()) {
+		if((*ft_iter)->port == port) {
+			ft_iter = forwarding_table.erase(ft_iter);
+		} else {
+			ft_iter++;
+		}
+	}
+}
+
+void RoutingProtocolImpl::remove_ft_entry_by_dest(unsigned short dest) {
+	vector<struct forwarding_table_entry*>::iterator ft_iter = forwarding_table.begin();
+	while(ft_iter != forwarding_table.end()) {
+		if((*ft_iter)->dest_id == dest) {
+			ft_iter = forwarding_table.erase(ft_iter);
+		} else {
+			ft_iter++;
+		}
+	}
 }
 
 void RoutingProtocolImpl::send_DV_msg(dv_entry* entry) {

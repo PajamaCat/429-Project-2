@@ -124,7 +124,6 @@ void RoutingProtocolImpl::check_entries() {
 		if (cur_time - (*iter)->last_update > PORT_STATUS_TIMEOUT) {
 			updateDV_from_cost_change((*iter)->neighbor_id, std::numeric_limits<int>::max());
 			iter = port_status_table.erase(iter);
-
 		} else {
 			++iter;
 		}

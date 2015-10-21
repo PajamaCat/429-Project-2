@@ -22,6 +22,15 @@ struct distance_vector {
 	unsigned short last_update;
 };
 
+struct node_cost {
+	unsigned short node_id;
+	unsigned short cost;
+};
+
+struct dv_msg_body {
+	vector<struct node_cost*> id_cost_pair;
+};
+
 struct msg_header {
   unsigned char type;
   unsigned char reserved;
@@ -75,6 +84,8 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // check expired entries in port_status_table and ...
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned int update_val);
+
+    void updateDV_from_DV_msg(unsigned short sender_id);
 
     void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
     // delete entry whose next hop is neighbor_id in forwarding table

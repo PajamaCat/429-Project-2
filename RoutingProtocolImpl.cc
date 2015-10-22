@@ -46,20 +46,21 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 
 	unsigned int pkt_type = *((unsigned char *)packet);
 	msg_header *header;
+
 	if (pkt_type == PING) {
 		header = (msg_header *)packet;
 		memset(&header->type, PONG, sizeof(header->type));
 		memcpy(&header->dst, &header->src, sizeof(header->dst));
-		int htons_id = htons(router_id);
+		unsigned short htons_id = htons(router_id);
 		memcpy(&header->src, &htons_id, sizeof(header->src));
-
 		sys->send(port, packet, size);
 
 	} else if (pkt_type == PONG) {
 		header = (msg_header *)packet;
 		unsigned short current_time = sys->time();
-		unsigned short neighbor_time = *((unsigned int *)packet + sizeof(header));
+		unsigned short neighbor_time = *((unsigned char *)packet + sizeof(header));
 		unsigned short new_cost = current_time - ntohs(neighbor_time);
+		std::cout<<"current_time "<<current_time<<" neighbor_time "<<ntohs(neighbor_time)<<"\n";
 
 		port_status_entry *en = NULL;
 		for (unsigned int i = 0; i < port_status_table.size(); i++) {
@@ -82,6 +83,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			dv_en->port = port;
 			dv_en->next_hop_id = en->neighbor_id;
 			dv_en->last_update = current_time;
+			dv_en->cost = numeric_limits<unsigned short>::max();
 			dv_table.push_back(dv_en);
 			std::cout<<"dv_en's next hop id "<<dv_en->next_hop_id<<"\n";
 		}
@@ -93,6 +95,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 //		}
 		// update DV if cost with neighbor changes
 		if (new_cost != en->cost) {
+			std::cout<<"en->cost "<<en->cost<<" new_cost "<<new_cost<<" diff "<<new_cost - en->cost<<"\n";
 			updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
 		}
 
@@ -142,25 +145,29 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		unsigned short current_time = sys->time();
 
 		std::cout<<"DV MSG SIZE "<<ntohs(header->size)<<"\n";
-		std::cout<<"size of header "<<sizeof(header)<<"\n";
-//		dv_msg_body *msg_body = (dv_msg_body *)(header + sizeof(header));
-		node_cost **body_start = (node_cost **)(header + sizeof(header));
-		vector<struct node_cost*> msg_body (
-				body_start, body_start + (ntohs(header->size)-sizeof(header))/sizeof(node_cost));
-		std::cout<<"yyyyyyy "<<ntohs(header->size)-sizeof(header)<<"\n";
-		std::cout<<"DV MSG body SIZE "<<msg_body.size()<<"\n";
+		dv_msg_body *msg_body = (dv_msg_body *)(header + sizeof(header));
+//		node_cost **body_start = (node_cost **)(header + sizeof(header));
+		node_cost **body_start = msg_body->id_cost_pairs;
+//		vector<struct node_cost*> msg_body (
+//				body_start, body_start + (ntohs(header->size)-sizeof(header))/sizeof(node_cost));
+//		std::cout<<"DV MSG body SIZE "<<msg_body.size()<<"\n";
 
-		vector<struct node_cost*>::iterator dv_packet_iter = msg_body.begin();
+//		vector<struct node_cost*>::iterator dv_packet_iter = msg_body.begin();
 		bool broadcast_dv_msg = false;
 
-		while(dv_packet_iter != msg_body.end()) {
-			std::cout<<"6\n";
+//		while(dv_packet_iter != msg_body.end()) {
+		while (*body_start != NULL) {
 
-			if(!dv_contains_dest((* dv_packet_iter)->node_id)) {
+			std::cout<<"6\n";
+			std::cout<<"node_id "<<ntohs((*body_start)->node_id)<<"\n";
+
+			if (!dv_contains_dest((*body_start)->node_id)) {
+//			if(!dv_contains_dest((* dv_packet_iter)->node_id)) {
 				std::cout<<"1\n";
 				// add new distance vector entry (with new destination)
 				dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
-				dv_en->dest_id = ntohs((* dv_packet_iter)->node_id);
+				dv_en->dest_id = ntohs((*body_start)->node_id);
+//				dv_en->dest_id = ntohs((* dv_packet_iter)->node_id);
 				dv_en->port = port;
 				dv_en->next_hop_id = neighbor_id;
 				dv_en->last_update = current_time;
@@ -170,10 +177,12 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 				// try to compare and update the existing distance vector entry
 				std::cout<<"2\n";
 
-				unsigned short new_cost = ntohs((* dv_packet_iter)->cost) + get_dv_entry_by_dest(neighbor_id)->cost;
+				unsigned short new_cost = ntohs((*body_start)->cost) + get_dv_entry_by_dest(neighbor_id)->cost;
+//				unsigned short new_cost = ntohs((* dv_packet_iter)->cost) + get_dv_entry_by_dest(neighbor_id)->cost;
 				std::cout<<"3\n";
 
-				dv_entry *old_dv_entry = get_dv_entry_by_dest(ntohs((* dv_packet_iter)->node_id));
+				dv_entry *old_dv_entry = get_dv_entry_by_dest(ntohs((*body_start)->node_id));
+//				dv_entry *old_dv_entry = get_dv_entry_by_dest(ntohs((* dv_packet_iter)->node_id));
 				if (old_dv_entry->cost > new_cost) {
 					// make path to dest have this neighbor as next hop.
 					old_dv_entry->cost = new_cost;
@@ -183,7 +192,8 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 					broadcast_dv_msg = true;
 				}
 			}
-			++dv_packet_iter;
+//			++dv_packet_iter;
+			body_start++;	//not sure at all
 			std::cout<<"4\n";
 		}
 		if (broadcast_dv_msg) {
@@ -205,7 +215,8 @@ void RoutingProtocolImpl::send_ping_msg() {
     pkt->size = htons(sizeof(struct msg_header));
     pkt->src = htons(this->router_id);
 
-    unsigned short cur_time = sys->time();
+    unsigned short cur_time = htons(sys->time());
+    std::cout<<"cur_time in ping "<<sys->time()<<" after htons "<<htons(sys->time())<<"\n";
 
     char *msg = (char *) malloc(sizeof(pkt) + sizeof(cur_time));
     memcpy(msg, pkt, sizeof(pkt));
@@ -254,7 +265,7 @@ void RoutingProtocolImpl::check_entries() {
 void RoutingProtocolImpl::updateDV_from_cost_change(
 		unsigned short neighbor_id, unsigned short delta) {
 
-	std::cout<<"update from cost change \n";
+	std::cout<<"update from cost change "<<delta<<"\n";
 	unsigned short cur_time = sys->time();
 
 	if (delta == std::numeric_limits<unsigned short>::max()) {
@@ -280,7 +291,13 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 			std::cout<<"D \n";
 
 			if (dv_table[i]->next_hop_id == neighbor_id) {
-				dv_table[i]->cost = dv_table[i]->cost + delta;
+
+				if (dv_table[i]->cost == numeric_limits<unsigned short>::max()) {
+					dv_table[i]->cost = delta;
+				} else {
+					dv_table[i]->cost = dv_table[i]->cost + delta;
+				}
+
 				dv_table[i]->last_update = cur_time;
 				std::cout<<"E \n";
 
@@ -360,8 +377,10 @@ void RoutingProtocolImpl::send_DV_msg() {
 	std::cout<<"G \n";
 
 	for (unsigned int i = 0; i < port_status_table.size(); i++) {
-//		dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
-		vector<node_cost*> msg_body;
+		dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
+		node_cost **pt = msg_body->id_cost_pairs;
+//		vector<node_cost*> msg_body;
+		unsigned short msg_size = 0;
 		std::cout<<"dv_bodyA "<< sizeof(msg_body)<<"\n";
 
 		for (unsigned int j = 0; j < dv_table.size(); j++) {
@@ -376,31 +395,38 @@ void RoutingProtocolImpl::send_DV_msg() {
 				cost_pair->cost = htons(numeric_limits<unsigned short>::max());
 			} else {
 				cost_pair->cost = htons(dv_table[j]->cost);
+				std::cout<<"cost "<<dv_table[j]->cost<<"\n";
 			}
-			msg_body.push_back(cost_pair);
-			std::cout<<"dv_bodyB "<< msg_body.size()<<"\n";
+			memcpy(*pt, cost_pair, sizeof(cost_pair));
+			msg_size += sizeof(cost_pair);
+			std::cout<<"entry "<<(*pt)->node_id<<" "<<ntohs((*pt)->cost)<<"\n";
+			pt++;
+//			memcpy(*pt, cost_pair, sizeof(cost_pair));
+//			msg_body.push_back(cost_pair);
+//			pt++;
 			std::cout<<"dv_bodyB "<< sizeof(msg_body)<<"\n";
-
 		}
+		(*pt) = NULL;
 
 		msg_header *dv_header = (msg_header *) malloc(sizeof(msg_header));
+		msg_size += sizeof(dv_header) + sizeof(msg_body);
+
 		dv_header->src = htons(router_id);
 		dv_header->dst = htons(port_status_table[i]->neighbor_id);
 		dv_header->type = DV;
-		dv_header->size = htons(sizeof(dv_header) + sizeof(msg_body));
+		dv_header->size = htons(msg_size);
 		std::cout<<"dv_header "<< sizeof(dv_header) + sizeof(msg_body)<<"\n";
-		std::cout<<"dv_body "<< msg_body.size()<<"\n";
-		std::cout<<"node_cost_size "<<sizeof(node_cost);
+		std::cout<<"dv_body "<<msg_size<<" "<<sizeof(&pt)<<" "<<sizeof(&msg_body)<<"\n";
 
 		char *msg = (char *) malloc(dv_header->size);
 		memcpy(msg, dv_header, sizeof(dv_header));
-		memcpy(msg + sizeof(dv_header), &msg_body, sizeof(msg_body));
+		memcpy(msg + sizeof(dv_header), &msg_body, msg_size);
 		std::cout<<"H \n";
 
 		sys->send(port_status_table[i]->port, msg, sizeof(msg));
 		std::cout<<"I \n";
 
-//		free(msg_body);
+		free(msg_body);
 		free(dv_header);
 	}
 }

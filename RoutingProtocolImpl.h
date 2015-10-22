@@ -30,7 +30,8 @@ struct node_cost {
 };
 
 struct dv_msg_body {
-    vector<struct node_cost*> id_cost_pair;
+	struct node_cost **id_cost_pairs;
+//    vector<struct node_cost*> id_cost_pair;
 };
 
 struct msg_header {

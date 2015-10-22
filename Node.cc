@@ -25,7 +25,7 @@ void Node::set_alarm(RoutingProtocol *r, unsigned int duration, void *d) {
 
 void Node::send(unsigned short port, void *packet, unsigned short size) {
   // Need to map port into a link and send
-  
+
   Node *rcpt_node = (*(link_vector[port]->get_node1()) == *this) ? link_vector[port]->get_node2() : link_vector[port]->get_node1();
 
   unsigned short rcpt_port = rcpt_node->get_link_port(link_vector[port]);

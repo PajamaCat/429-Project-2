@@ -142,70 +142,60 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 	} else if (pkt_type == DV) {
 		header = (msg_header *)packet;
 		unsigned short neighbor_id = ntohs(header->src);
-		unsigned short current_time = sys->time();
 
 		std::cout<<"DV MSG SIZE "<<ntohs(header->size)<<"\n";
-		dv_msg_body *msg_body = (dv_msg_body *)(header + sizeof(header));
-//		node_cost **body_start = (node_cost **)(header + sizeof(header));
-		node_cost **body_start = msg_body->id_cost_pairs;
-//		vector<struct node_cost*> msg_body (
-//				body_start, body_start + (ntohs(header->size)-sizeof(header))/sizeof(node_cost));
-//		std::cout<<"DV MSG body SIZE "<<msg_body.size()<<"\n";
 
-//		vector<struct node_cost*>::iterator dv_packet_iter = msg_body.begin();
-		bool broadcast_dv_msg = false;
-
-//		while(dv_packet_iter != msg_body.end()) {
-		while (*body_start != NULL) {
-
-			std::cout<<"6\n";
-			std::cout<<"node_id "<<ntohs((*body_start)->node_id)<<"\n";
-
-			if (!dv_contains_dest((*body_start)->node_id)) {
-//			if(!dv_contains_dest((* dv_packet_iter)->node_id)) {
-				std::cout<<"1\n";
-				// add new distance vector entry (with new destination)
-				dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
-				dv_en->dest_id = ntohs((*body_start)->node_id);
-//				dv_en->dest_id = ntohs((* dv_packet_iter)->node_id);
-				dv_en->port = port;
-				dv_en->next_hop_id = neighbor_id;
-				dv_en->last_update = current_time;
-				dv_table.push_back(dv_en);
-				broadcast_dv_msg = true;
-			} else {
-				// try to compare and update the existing distance vector entry
-				std::cout<<"2\n";
-
-				unsigned short new_cost = ntohs((*body_start)->cost) + get_dv_entry_by_dest(neighbor_id)->cost;
-//				unsigned short new_cost = ntohs((* dv_packet_iter)->cost) + get_dv_entry_by_dest(neighbor_id)->cost;
-				std::cout<<"3\n";
-
-				dv_entry *old_dv_entry = get_dv_entry_by_dest(ntohs((*body_start)->node_id));
-//				dv_entry *old_dv_entry = get_dv_entry_by_dest(ntohs((* dv_packet_iter)->node_id));
-				if (old_dv_entry->cost > new_cost) {
-					// make path to dest have this neighbor as next hop.
-					old_dv_entry->cost = new_cost;
-					old_dv_entry->next_hop_id = neighbor_id;
-					old_dv_entry->port = port;
-					old_dv_entry->last_update = current_time;
-					broadcast_dv_msg = true;
-				}
-			}
-//			++dv_packet_iter;
-			body_start++;	//not sure at all
-			std::cout<<"4\n";
-		}
-		if (broadcast_dv_msg) {
-			std::cout<<"5\n";
-			send_DV_msg();
-		}
+		updateDV_from_DV_msg(port, neighbor_id, (char *)header+sizeof(struct msg_header), 
+			(ntohs(header->size) - sizeof(struct msg_header))/sizeof(struct node_cost));
 	}
 }
 
 void RoutingProtocolImpl::updateDV_from_DV_msg(
-		unsigned short neighbor_id, struct dv_msg_body* dv_msg) {
-	//TODO:
+	unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count) {
+
+	unsigned short current_time = sys->time();
+
+	bool broadcast_dv_msg = false;
+	int index = 0;
+
+	while(index < pair_count) {
+		std::cout<<"6\n";
+		unsigned short node_id = ntohs(((node_cost *)body_start + index * sizeof(struct node_cost))->node_id);
+		unsigned short old_cost = ntohs(((node_cost *)body_start + index * sizeof(struct node_cost))->cost);
+		if(!dv_contains_dest(node_id)) {
+			std::cout<<"1\n";
+			// add new distance vector entry (with new destination)
+			dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
+			dv_en->dest_id = node_id;
+			dv_en->port = port;
+			dv_en->next_hop_id = neighbor_id;
+			dv_en->last_update = current_time;
+			dv_table.push_back(dv_en);
+			broadcast_dv_msg = true;
+		} else {
+			// try to compare and update the existing distance vector entry
+			std::cout<<"2\n";
+
+			unsigned short new_cost = old_cost + get_dv_entry_by_dest(neighbor_id)->cost;
+			std::cout<<"3\n";
+
+			dv_entry *old_dv_entry = get_dv_entry_by_dest(node_id);
+			if (old_dv_entry->cost > new_cost) {
+				// make path to dest have this neighbor as next hop.
+				old_dv_entry->cost = new_cost;
+				old_dv_entry->next_hop_id = neighbor_id;
+				old_dv_entry->port = port;
+				old_dv_entry->last_update = current_time;
+				broadcast_dv_msg = true;
+			}
+		}
+		index++;
+		std::cout<<"4\n";
+	}
+	if (broadcast_dv_msg) {
+		std::cout<<"5\n";
+		send_DV_msg();
+	}
 }
 
 void RoutingProtocolImpl::send_ping_msg() {
@@ -377,11 +367,6 @@ void RoutingProtocolImpl::send_DV_msg() {
 	std::cout<<"G \n";
 
 	for (unsigned int i = 0; i < port_status_table.size(); i++) {
-// 		dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
-// 		node_cost **pt = msg_body->id_cost_pairs;
-// //		vector<node_cost*> msg_body;
-// 		unsigned short msg_size = 0;
-// 		std::cout<<"dv_bodyA "<< sizeof(msg_body)<<"\n";
 
 		// Get count of node cost pair to send
 		int count = 0;
@@ -426,51 +411,6 @@ void RoutingProtocolImpl::send_DV_msg() {
 
 		sys->send(port_status_table[i]->port, msg, sizeof(msg));
 
-// 		for (unsigned int j = 0; j < dv_table.size(); j++) {
-// 			if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
-// 				continue;
-// 			}
-// 			// poison reverse
-// 			node_cost *cost_pair = (node_cost *) malloc(sizeof(node_cost));
-// 			cost_pair->node_id = htons(dv_table[j]->dest_id);
-// 			if (dv_table[j]->next_hop_id == port_status_table[i]->neighbor_id
-// 					&& dv_table[j]->dest_id != port_status_table[i]->neighbor_id) {
-// 				cost_pair->cost = htons(numeric_limits<unsigned short>::max());
-// 			} else {
-// 				cost_pair->cost = htons(dv_table[j]->cost);
-// 				std::cout<<"cost "<<dv_table[j]->cost<<"\n";
-// 			}
-// 			memcpy(*pt, cost_pair, sizeof(cost_pair));
-// 			msg_size += sizeof(cost_pair);
-// 			std::cout<<"entry "<<(*pt)->node_id<<" "<<ntohs((*pt)->cost)<<"\n";
-// 			pt++;
-// //			memcpy(*pt, cost_pair, sizeof(cost_pair));
-// //			msg_body.push_back(cost_pair);
-// //			pt++;
-// 			std::cout<<"dv_bodyB "<< sizeof(msg_body)<<"\n";
-// 		}
-// 		(*pt) = NULL;
-
-		// msg_header *dv_header = (msg_header *) malloc(sizeof(msg_header));
-		// msg_size += sizeof(dv_header) + sizeof(msg_body);
-
-		// dv_header->src = htons(router_id);
-		// dv_header->dst = htons(port_status_table[i]->neighbor_id);
-		// dv_header->type = DV;
-		// dv_header->size = htons(msg_size);
-		// std::cout<<"dv_header "<< sizeof(dv_header) + sizeof(msg_body)<<"\n";
-		// std::cout<<"dv_body "<<msg_size<<" "<<sizeof(&pt)<<" "<<sizeof(&msg_body)<<"\n";
-
-		// char *msg = (char *) malloc(dv_header->size);
-		// memcpy(msg, dv_header, sizeof(dv_header));
-		// memcpy(msg + sizeof(dv_header), &msg_body, msg_size);
-		// std::cout<<"H \n";
-
-		
-		// std::cout<<"I \n";
-
-		// free(msg_body);
-		// free(dv_header);
 	}
 }
 

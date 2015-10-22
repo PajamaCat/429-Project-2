@@ -29,11 +29,6 @@ struct node_cost {
     unsigned short cost;
 };
 
-// struct dv_msg_body {
-// 	struct node_cost **id_cost_pairs;
-// //    vector<struct node_cost*> id_cost_pair;
-// };
-
 struct msg_header {
   unsigned char type;
   unsigned char reserved;
@@ -88,7 +83,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
 
-    void updateDV_from_DV_msg(unsigned short sender_id, struct dv_msg_body* dv_msg);
+    void updateDV_from_DV_msg(unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count);
 
     void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
     // delete entry whose next hop is neighbor_id in forwarding table

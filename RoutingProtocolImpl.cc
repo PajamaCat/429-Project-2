@@ -82,6 +82,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			memcpy(&dv_en->next_hop_id, &en->neighbor_id, sizeof(en->neighbor_id));
 			memcpy(&dv_en->last_update, &current_time, sizeof(current_time));
 			dv_table.push_back(dv_en);
+			std::cout<<"dv_en's nexthopid "<<dv_en->next_hop_id<<"\n";
 		}
 
 
@@ -168,7 +169,8 @@ void RoutingProtocolImpl::check_entries() {
 	vector<struct port_status_entry*>::iterator port_iter = port_status_table.begin();
 	while (port_iter != port_status_table.end()) {
 		if (cur_time - (*port_iter)->last_update > PORT_STATUS_TIMEOUT) {
-			updateDV_from_cost_change((*port_iter)->neighbor_id, std::numeric_limits<int>::max());
+			updateDV_from_cost_change(
+					(*port_iter)->neighbor_id, std::numeric_limits<int>::max());
 			remove_ft_entry_by_port((*port_iter)->port);
 			port_iter = port_status_table.erase(port_iter);
 		} else {
@@ -208,27 +210,28 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 		// if this triggers new DV (nextHop changes to directly routing to neighbor,
 		// or general min_cost change[where dest is not in the neighbor list], broad-
 		// cast new DV to neighbors)
+		bool update_dv = false;
 		for (unsigned int i = 0; i < dv_table.size(); i++) {
 			if (dv_table[i]->next_hop_id == neighbor_id) {
+				update_dv = true;
 				port_status_entry* nbr_entry = get_nbr_port_status_entry(dv_table[i]->dest_id);
 
 				// re-route directly to nbr
 				if (nbr_entry != NULL) {
-					if (nbr_entry->cost < update_val) {
+					if (nbr_entry->cost < update_val && nbr_entry->cost != 0) {
 						memcpy(&dv_table[i]->next_hop_id,
 								&nbr_entry->neighbor_id,
 								sizeof(nbr_entry->neighbor_id));
 						memcpy(&dv_table[i]->cost, &nbr_entry->cost, sizeof(nbr_entry->cost));
 						memcpy(&dv_table[i]->port, &nbr_entry->port, sizeof(nbr_entry->port));
 						memcpy(&dv_table[i]->last_update, &cur_time, sizeof(cur_time));
-						send_DV_msg(dv_table[i]);
 						continue;
 					}
 				}
 				memcpy(&dv_table[i]->cost, &update_val, sizeof(update_val));
 				memcpy(&dv_table[i]->last_update, &cur_time, sizeof(cur_time));
-				send_DV_msg(dv_table[i]);
 			}
+			send_DV_msg();
 		}
 	}
 }
@@ -300,9 +303,57 @@ void RoutingProtocolImpl::remove_ft_entry_by_dest(unsigned short dest) {
 	}
 }
 
-void RoutingProtocolImpl::send_DV_msg(dv_entry* entry) {
+void RoutingProtocolImpl::send_DV_msg() {
+	// Build msg body
+	std::cout<<"send DV\n";
+	dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
+	for (unsigned int i = 0; i < dv_table.size(); i++) {
+		std::cout<<"A\n";
+		std::cout<<"dest id"<<dv_table[i]->dest_id<<"\n";
+		node_cost *cost = (node_cost *) malloc(sizeof(struct node_cost));
+		cost->node_id = htons(dv_table[i]->dest_id);
+
+		std::cout<<"B\n";
+		std::cout<<"next hop is: "<<dv_table[i]->next_hop_id<<"\n";
+		if (dv_table[i]->next_hop_id != dv_table[i]->dest_id
+				&& dv_contains_dest(dv_table[i]->dest_id)) {
+			// poison reverse
+			unsigned short infinity = std::numeric_limits<unsigned short>::max();
+			cost->cost = htons(infinity);
+		} else {
+			std::cout<<"cost? " <<dv_table[i]->cost<<"\n";
+			cost->cost = htons(dv_table[i]->cost);
+//			memcpy(&cost->cost, &dv_table[i]->cost, sizeof(dv_table[i]->cost));
+		}
+
+		std::cout<<"C\n";
+		std::cout<<"DV entry: id: "<<cost->node_id<<" cost: "<<cost->cost;
+		msg_body->id_cost_pair.push_back(cost);
+	}
+
+	unsigned short msg_size = sizeof(struct msg_header) + sizeof(msg_body);
+
 	for (unsigned int i = 0; i < port_status_table.size(); i++) {
-		//TODO:
+		std::cout<<"D\n";
+
+		msg_header *header = (msg_header *) malloc(sizeof(struct msg_header));
+		header->dst = htons(port_status_table[i]->neighbor_id);
+		header->src = htons(router_id);
+		header->size = htons(msg_size);
+		header->type = DV;
+
+		// copy content
+		char *msg = (char *) malloc(msg_size);
+		memcpy(msg, header, sizeof(header));
+		memcpy(msg + sizeof(header), msg_body, sizeof(msg_body));
+
+		std::cout<<"E"<<" port: "<<port_status_table[i]->port<<"\n";
+		sys->send(port_status_table[i]->port, msg, msg_size);
+
+		std::cout<<"F\n";
+		delete header;
+
+		std::cout<<"G\n";
 	}
 }
 

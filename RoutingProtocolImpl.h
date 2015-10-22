@@ -92,7 +92,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
     // delete entry whose next hop is neighbor_id in forwarding table
 
-    void send_DV_msg(dv_entry* entry);
+    void send_DV_msg();
 
     port_status_entry* get_nbr_port_status_entry(unsigned int neighbor_id);
 

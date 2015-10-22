@@ -85,7 +85,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     void check_entries();
     // check expired entries in port_status_table and ...
 
-    void updateDV_from_cost_change(unsigned short neighbor_id, unsigned int update_val);
+    void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
 
     void updateDV_from_DV_msg(unsigned short sender_id, struct dv_msg_body* dv_msg);
 

@@ -377,57 +377,100 @@ void RoutingProtocolImpl::send_DV_msg() {
 	std::cout<<"G \n";
 
 	for (unsigned int i = 0; i < port_status_table.size(); i++) {
-		dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
-		node_cost **pt = msg_body->id_cost_pairs;
-//		vector<node_cost*> msg_body;
-		unsigned short msg_size = 0;
-		std::cout<<"dv_bodyA "<< sizeof(msg_body)<<"\n";
+// 		dv_msg_body *msg_body = (dv_msg_body *) malloc(sizeof(struct dv_msg_body));
+// 		node_cost **pt = msg_body->id_cost_pairs;
+// //		vector<node_cost*> msg_body;
+// 		unsigned short msg_size = 0;
+// 		std::cout<<"dv_bodyA "<< sizeof(msg_body)<<"\n";
 
+		// Get count of node cost pair to send
+		int count = 0;
 		for (unsigned int j = 0; j < dv_table.size(); j++) {
 			if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
 				continue;
 			}
-			// poison reverse
+			count++;
+		}
+		msg_header *dv_header = (msg_header *) malloc(sizeof(struct msg_header));
+		dv_header->src = htons(router_id);
+		dv_header->dst = htons(port_status_table[i]->neighbor_id);
+		dv_header->type = DV;
+		dv_header->size = htons(sizeof(struct msg_header) + sizeof(struct node_cost) * count);
+
+		char *msg = (char *) malloc(dv_header->size);
+		memcpy(msg, dv_header, sizeof(struct msg_header));
+		free(dv_header);
+
+		count = 0; // offset in dv msg body
+		for (unsigned int j = 0; j < dv_table.size(); j++) {
+			if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
+				continue;
+			}
+
 			node_cost *cost_pair = (node_cost *) malloc(sizeof(node_cost));
 			cost_pair->node_id = htons(dv_table[j]->dest_id);
 			if (dv_table[j]->next_hop_id == port_status_table[i]->neighbor_id
 					&& dv_table[j]->dest_id != port_status_table[i]->neighbor_id) {
+				// poison reverse
 				cost_pair->cost = htons(numeric_limits<unsigned short>::max());
 			} else {
+				// normal case
 				cost_pair->cost = htons(dv_table[j]->cost);
 				std::cout<<"cost "<<dv_table[j]->cost<<"\n";
 			}
-			memcpy(*pt, cost_pair, sizeof(cost_pair));
-			msg_size += sizeof(cost_pair);
-			std::cout<<"entry "<<(*pt)->node_id<<" "<<ntohs((*pt)->cost)<<"\n";
-			pt++;
-//			memcpy(*pt, cost_pair, sizeof(cost_pair));
-//			msg_body.push_back(cost_pair);
-//			pt++;
-			std::cout<<"dv_bodyB "<< sizeof(msg_body)<<"\n";
+			memcpy(msg + sizeof(struct msg_header) + count * sizeof(cost_pair), cost_pair, sizeof(cost_pair));
+			free(cost_pair);
+			
+			count++;
 		}
-		(*pt) = NULL;
-
-		msg_header *dv_header = (msg_header *) malloc(sizeof(msg_header));
-		msg_size += sizeof(dv_header) + sizeof(msg_body);
-
-		dv_header->src = htons(router_id);
-		dv_header->dst = htons(port_status_table[i]->neighbor_id);
-		dv_header->type = DV;
-		dv_header->size = htons(msg_size);
-		std::cout<<"dv_header "<< sizeof(dv_header) + sizeof(msg_body)<<"\n";
-		std::cout<<"dv_body "<<msg_size<<" "<<sizeof(&pt)<<" "<<sizeof(&msg_body)<<"\n";
-
-		char *msg = (char *) malloc(dv_header->size);
-		memcpy(msg, dv_header, sizeof(dv_header));
-		memcpy(msg + sizeof(dv_header), &msg_body, msg_size);
-		std::cout<<"H \n";
 
 		sys->send(port_status_table[i]->port, msg, sizeof(msg));
-		std::cout<<"I \n";
 
-		free(msg_body);
-		free(dv_header);
+// 		for (unsigned int j = 0; j < dv_table.size(); j++) {
+// 			if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
+// 				continue;
+// 			}
+// 			// poison reverse
+// 			node_cost *cost_pair = (node_cost *) malloc(sizeof(node_cost));
+// 			cost_pair->node_id = htons(dv_table[j]->dest_id);
+// 			if (dv_table[j]->next_hop_id == port_status_table[i]->neighbor_id
+// 					&& dv_table[j]->dest_id != port_status_table[i]->neighbor_id) {
+// 				cost_pair->cost = htons(numeric_limits<unsigned short>::max());
+// 			} else {
+// 				cost_pair->cost = htons(dv_table[j]->cost);
+// 				std::cout<<"cost "<<dv_table[j]->cost<<"\n";
+// 			}
+// 			memcpy(*pt, cost_pair, sizeof(cost_pair));
+// 			msg_size += sizeof(cost_pair);
+// 			std::cout<<"entry "<<(*pt)->node_id<<" "<<ntohs((*pt)->cost)<<"\n";
+// 			pt++;
+// //			memcpy(*pt, cost_pair, sizeof(cost_pair));
+// //			msg_body.push_back(cost_pair);
+// //			pt++;
+// 			std::cout<<"dv_bodyB "<< sizeof(msg_body)<<"\n";
+// 		}
+// 		(*pt) = NULL;
+
+		// msg_header *dv_header = (msg_header *) malloc(sizeof(msg_header));
+		// msg_size += sizeof(dv_header) + sizeof(msg_body);
+
+		// dv_header->src = htons(router_id);
+		// dv_header->dst = htons(port_status_table[i]->neighbor_id);
+		// dv_header->type = DV;
+		// dv_header->size = htons(msg_size);
+		// std::cout<<"dv_header "<< sizeof(dv_header) + sizeof(msg_body)<<"\n";
+		// std::cout<<"dv_body "<<msg_size<<" "<<sizeof(&pt)<<" "<<sizeof(&msg_body)<<"\n";
+
+		// char *msg = (char *) malloc(dv_header->size);
+		// memcpy(msg, dv_header, sizeof(dv_header));
+		// memcpy(msg + sizeof(dv_header), &msg_body, msg_size);
+		// std::cout<<"H \n";
+
+		
+		// std::cout<<"I \n";
+
+		// free(msg_body);
+		// free(dv_header);
 	}
 }
 

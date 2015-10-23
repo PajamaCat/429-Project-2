@@ -83,10 +83,10 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // check expired entries in port_status_table and dv table
 
     void schedule_dv_update();
-    void schedule_ls_update()
+    void schedule_ls_update();
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
-
+    void updateLS_from_cost_change();
     void updateDV_from_DV_msg(unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count);
 
     void delete_from_ft(unsigned short neighbor_id, unsigned short update_val);

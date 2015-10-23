@@ -36,7 +36,7 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 	if(protocol_type == P_DV) {
 		sys->set_alarm(this, DV_UPDATE_INTERVAL, &instr[SEND_DV]);
 	} else {
-		sys->set_alarm(this, LS_UPDATE_INTERBAL, &instr[SEND_LS]);
+		sys->set_alarm(this, LS_UPDATE_INTERVAL, &instr[SEND_LS]);
 	}
 }
 
@@ -130,7 +130,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 				updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
 				send_DV_msg();
 			} else {	// protocol LS
-				updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
+//				updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
 				send_LS_msg();
 			}
 		}
@@ -338,6 +338,10 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 			}
 		}
 	}
+}
+
+void RoutingProtocolImpl::updateLS_from_cost_change() {
+
 }
 
 port_status_entry* RoutingProtocolImpl::get_nbr_port_status_entry(unsigned short neighbor_id) {

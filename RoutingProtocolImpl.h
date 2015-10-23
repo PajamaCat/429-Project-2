@@ -41,6 +41,7 @@ enum instruction {
   SEND_PING,
   CHECK_ENTRY,
   SEND_DV,
+  SEND_LS
 };
 
 class RoutingProtocolImpl : public RoutingProtocol {
@@ -82,6 +83,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // check expired entries in port_status_table and dv table
 
     void schedule_dv_update();
+    void schedule_ls_update()
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
 
@@ -91,6 +93,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // delete entry whose next hop is neighbor_id in forwarding table
 
     void send_DV_msg();
+    void send_LS_msg();
 
     port_status_entry* get_nbr_port_status_entry(unsigned short neighbor_id);
 

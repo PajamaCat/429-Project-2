@@ -4,12 +4,16 @@
 #include "RoutingProtocolImpl.h"
 #include <limits>
 
+#define CHECK_ENTRY_INTERVAL 1000 // 1 sec
 #define PING_INTERVAL 10000  // 10 secs
 #define DV_UPDATE_INTERVAL 30000	// 30 secs
+#define LS_UPDATE_INTERVAL 30000	// 30 secs
 #define PORT_STATUS_TIMEOUT 15000	// 15 secs
 #define DV_TIMEOUT 45000	//45 secs
+#define LS_TIMEOUT 45000	//45 secs
 
-instruction instr[] = {SEND_PING, CHECK_ENTRY, SEND_DV};
+
+instruction instr[] = {SEND_PING, CHECK_ENTRY, SEND_DV, SEND_LS};
 
 
 RoutingProtocolImpl::RoutingProtocolImpl(Node *n) : RoutingProtocol(n) {
@@ -29,7 +33,11 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 	std::cout<<"My Router ID is "<<router_id<<"\n";
 	send_ping_msg();
 	check_entries();
-	sys->set_alarm(this, DV_UPDATE_INTERVAL, &instr[SEND_DV]);
+	if(protocol_type == P_DV) {
+		sys->set_alarm(this, DV_UPDATE_INTERVAL, &instr[SEND_DV]);
+	} else {
+		sys->set_alarm(this, LS_UPDATE_INTERBAL, &instr[SEND_LS]);
+	}
 }
 
 void RoutingProtocolImpl::handle_alarm(void *data) {
@@ -41,6 +49,8 @@ void RoutingProtocolImpl::handle_alarm(void *data) {
 		check_entries();
 	} else if (memcmp(data, &instr[SEND_DV], sizeof(instruction)) == 0) {
 		schedule_dv_update();
+	} else if (memcmp(data, &instr[SEND_DV], sizeof(instruction)) == 0) {
+		schedule_ls_update();
 	}
 
 }
@@ -81,16 +91,20 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		}
 		std::cout<<"en_cost "<<en->cost<<"\n";
 
-		// Initializing for distance vector
-		if (!dv_contains_dest(en->neighbor_id)) {
-			dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
-			dv_en->dest_id = en->neighbor_id;
-			dv_en->port = port;
-			dv_en->next_hop_id = en->neighbor_id;
-			dv_en->last_update = current_time;
-			dv_en->cost = numeric_limits<unsigned short>::max();
-			dv_table.push_back(dv_en);
-			std::cout<<"dv_en's next hop id "<<dv_en->next_hop_id<<"\n";
+		if (protocol_type == P_DV) {
+			// Initializing for distance vector
+			if (!dv_contains_dest(en->neighbor_id)) {
+				dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
+				dv_en->dest_id = en->neighbor_id;
+				dv_en->port = port;
+				dv_en->next_hop_id = en->neighbor_id;
+				dv_en->last_update = current_time;
+				dv_en->cost = numeric_limits<unsigned short>::max();
+				dv_table.push_back(dv_en);
+				std::cout<<"dv_en's next hop id "<<dv_en->next_hop_id<<"\n";
+			}
+		} else { // protocol LS
+
 		}
 
 		// Initializing for forwarding table
@@ -102,15 +116,23 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 			forwarding_table.push_back(ft_en);
 		}
 
+		// DEBUG print
 		for (unsigned int i = 0; i < dv_table.size(); i++) {
 			std::cout<<"dest_id "<<dv_table[i]->dest_id<<" "<<"cost "<<dv_table[i]->cost<<" "
 					<<"next_hop "<<dv_table[i]->next_hop_id<<"\n";
 		}
+
+
 		// update DV & FT if cost with neighbor changes
 		if (new_cost != en->cost) {
 			std::cout<<"en->cost "<<en->cost<<" new_cost "<<new_cost<<" diff "<<new_cost - en->cost<<"\n";
-			updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
-			send_DV_msg();
+			if(protocol_type == P_DV) {
+				updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
+				send_DV_msg();
+			} else {	// protocol LS
+				updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
+				send_LS_msg();
+			}
 		}
 
 		en->last_update = current_time;
@@ -146,6 +168,11 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 
 		updateDV_from_DV_msg(port, neighbor_id, (char *)packet + sizeof(struct msg_header),
 			(ntohs(header->size) - sizeof(struct msg_header))/sizeof(struct node_cost));
+		free(packet);
+	} else if (pkt_type == LS) {
+		header = (msg_header *)packet;
+		unsigned short source_id = ntohs(header->src);
+
 		free(packet);
 	}
 }
@@ -241,7 +268,7 @@ void RoutingProtocolImpl::send_ping_msg() {
     	sys->send(i, msg, sizeof(struct msg_header) + sizeof(cur_time));
     }
 
-    sys->set_alarm(this, 10000, &instr[SEND_PING]);
+    sys->set_alarm(this, PING_INTERVAL, &instr[SEND_PING]);
 
 
 }
@@ -265,6 +292,8 @@ void RoutingProtocolImpl::check_entries() {
 		}
 	}
 
+
+	//TODO
 	// check DV table
 	vector<struct dv_entry*>::iterator dv_iter = dv_table.begin();
 	while (dv_iter != dv_table.end()) {
@@ -276,7 +305,7 @@ void RoutingProtocolImpl::check_entries() {
 		}
 	}
 
-	sys->set_alarm(this, 1000, &instr[CHECK_ENTRY]);
+	sys->set_alarm(this, CHECK_ENTRY_INTERVAL, &instr[CHECK_ENTRY]);
 }
 
 void RoutingProtocolImpl::updateDV_from_cost_change(
@@ -424,6 +453,61 @@ void RoutingProtocolImpl::send_DV_msg() {
 
 		sys->send(port_status_table[i]->port, msg, msg_size);
 	}
+}
+
+
+void RoutingProtocolImpl::send_LS_msg() {
+	// Build msg body
+
+	// for (unsigned int i = 0; i < port_status_table.size(); i++) {
+
+	// 	// Get count of node cost pair to send
+	// 	int count = 0;
+	// 	for (unsigned int j = 0; j < dv_table.size(); j++) {
+	// 		if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
+	// 			continue;
+	// 		}
+	// 		count++;
+	// 	}
+	// 	msg_header *dv_header = (msg_header *) malloc(sizeof(struct msg_header));
+	// 	dv_header->src = htons(router_id);
+	// 	dv_header->dst = htons(port_status_table[i]->neighbor_id);
+	// 	dv_header->type = DV;
+	// 	unsigned short msg_size = sizeof(struct msg_header) + sizeof(struct node_cost) * count;
+	// 	dv_header->size = htons(msg_size);
+
+	// 	char *msg = (char *) malloc(msg_size);
+	// 	memcpy(msg, dv_header, sizeof(struct msg_header));
+	// 	free(dv_header);
+
+	// 	count = 0; // offset in dv msg body
+	// 	for (unsigned int j = 0; j < dv_table.size(); j++) {
+	// 		if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
+	// 			continue;
+	// 		}
+
+	// 		node_cost *cost_pair = (node_cost *) malloc(sizeof(struct node_cost));
+	// 		cost_pair->node_id = htons(dv_table[j]->dest_id);
+	// 		if (dv_table[j]->next_hop_id == port_status_table[i]->neighbor_id
+	// 				&& dv_table[j]->dest_id != port_status_table[i]->neighbor_id) {
+	// 			// poison reverse
+	// 			cost_pair->cost = htons(numeric_limits<unsigned short>::max());
+	// 		} else {
+	// 			// normal case
+	// 			cost_pair->cost = htons(dv_table[j]->cost);
+	// 		}
+	// 		memcpy(msg + sizeof(struct msg_header) + count * sizeof(struct node_cost), cost_pair, sizeof(struct node_cost));
+	// 		free(cost_pair);
+	// 		count++;
+	// 	}
+
+	// 	sys->send(port_status_table[i]->port, msg, msg_size);
+	// }
+}
+
+void RoutingProtocolImpl::schedule_ls_update() {
+	send_LS_msg();
+	sys->set_alarm(this, LS_UPDATE_INTERVAL, &instr[SEND_LS]);
 }
 
 void RoutingProtocolImpl::schedule_dv_update() {

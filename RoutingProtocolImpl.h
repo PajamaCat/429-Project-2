@@ -85,20 +85,20 @@ class RoutingProtocolImpl : public RoutingProtocol {
 
     void updateDV_from_DV_msg(unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count);
 
-    void delete_from_ft(unsigned short neighbor_id, unsigned int update_val);
+    void delete_from_ft(unsigned short neighbor_id, unsigned short update_val);
     // delete entry whose next hop is neighbor_id in forwarding table
 
     void send_DV_msg();
 
-    port_status_entry* get_nbr_port_status_entry(unsigned int neighbor_id);
+    port_status_entry* get_nbr_port_status_entry(unsigned short neighbor_id);
 
-    bool dv_contains_dest(unsigned int node_id);
+    bool dv_contains_dest(unsigned short node_id);
 
-    bool ft_contains_dest(unsigned int node_id);
+    bool ft_contains_dest(unsigned short node_id);
 
-    dv_entry* get_dv_entry_by_dest(unsigned int node_id);
+    dv_entry* get_dv_entry_by_dest(unsigned short node_id);
 
-    forwarding_table_entry* get_ft_entry_by_dest(unsigned int node_id);
+    forwarding_table_entry* get_ft_entry_by_dest(unsigned short node_id);
 
     void remove_ft_entry_by_port(unsigned short port);
     void remove_ft_entry_by_dest(unsigned short dest);

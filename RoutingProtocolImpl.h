@@ -21,7 +21,7 @@ struct dv_entry {
     unsigned short cost;
     unsigned short next_hop_id;
     unsigned short port;
-    unsigned short last_update;
+    unsigned int last_update;
 };
 
 struct node_cost {

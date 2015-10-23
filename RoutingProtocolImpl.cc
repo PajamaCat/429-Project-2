@@ -49,22 +49,20 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 
 	if (pkt_type == PING) {
 		header = (msg_header *)packet;
-		unsigned short time = ntohs(*((unsigned char *)packet + sizeof(struct msg_header)));
-		std::cout<<"Before set In Ping, time is "<<time<<"\n";
 		memset(&header->type, PONG, sizeof(header->type));
 		memcpy(&header->dst, &header->src, sizeof(header->dst));
 		unsigned short htons_id = htons(router_id);
 		memcpy(&header->src, &htons_id, sizeof(header->src));
-		unsigned short time2 = ntohs(*((unsigned char *)packet + sizeof(struct msg_header)));
-		std::cout<<"In Ping, time is "<<time2<<"\n";
+
 		sys->send(port, packet, size);
 
 	} else if (pkt_type == PONG) {
 		header = (msg_header *)packet;
-		unsigned short current_time = sys->time();
-		unsigned short neighbor_time = *((unsigned char *)packet + sizeof(struct msg_header));
-		unsigned short new_cost = current_time - ntohs(neighbor_time);
-		std::cout<<"current_time "<<current_time<<" neighbor_time "<<ntohs(neighbor_time)<<"\n";
+		unsigned int current_time = sys->time();
+		void *nbr_time_pt = (unsigned char *)packet + sizeof(struct msg_header);
+		unsigned int neighbor_time = *((unsigned int *)nbr_time_pt);
+		unsigned short new_cost = current_time - ntohl(neighbor_time);
+		std::cout<<"current_time "<<current_time<<" neighbor_time "<<ntohl(neighbor_time)<<" new cost "<<new_cost<<"\n";
 
 		port_status_entry *en = get_nbr_port_status_entry(ntohs(header->src));
 
@@ -151,7 +149,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 void RoutingProtocolImpl::updateDV_from_DV_msg(
 	unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count) {
 
-	unsigned short current_time = sys->time();
+	unsigned int current_time = sys->time();
 
 	bool broadcast_dv_msg = false;
 	int index = 0;
@@ -215,26 +213,20 @@ void RoutingProtocolImpl::updateDV_from_DV_msg(
 
 void RoutingProtocolImpl::send_ping_msg() {
 
-    msg_header *pkt = (msg_header *) malloc(sizeof(struct msg_header));
-    unsigned short cur_time = htons(sys->time());
+    unsigned int cur_time = htonl(sys->time());
+    char *msg = (char *) malloc(sizeof(struct msg_header) + sizeof(cur_time));
+    struct msg_header *pkt  = (struct msg_header *) msg;
 
-    pkt->type = PING;
+    pkt->type = (unsigned char) PING;
     pkt->size = htons(sizeof(struct msg_header) + sizeof(cur_time));
     pkt->src = htons(this->router_id);
 
-    std::cout<<"cur_time in ping "<<ntohs(cur_time)<<" after htons "<<cur_time<<"\n";
+    std::cout<<"cur_time in ping "<<ntohl(cur_time)<<" after htonl "<<cur_time<<"\n";
 
-    unsigned char *msg = (unsigned char *) malloc(sizeof(struct msg_header) + sizeof(cur_time));
-    memset(msg, 0, sizeof(struct msg_header) + sizeof(cur_time));
+    void *time_addr = msg + sizeof(struct msg_header);
+    memcpy(time_addr, &cur_time, sizeof(cur_time));
 
-    memcpy(msg, pkt, sizeof(struct msg_header));
-    free(pkt);
-    msg_header *tmp = (msg_header *)msg;
-
-    memcpy(msg + sizeof(struct msg_header), &cur_time, sizeof(cur_time));
-
-    unsigned short time = ntohs((unsigned short)(*(msg + sizeof(struct msg_header))));
-    std::cout<<"time after set "<<time<<"\n";
+    std::cout<<"time after set "<<ntohl((unsigned int)(*((unsigned int *)time_addr)))<<"\n";
 
     for (unsigned short i = 0; i < num_ports; i++) {
     	sys->send(i, msg, sizeof(struct msg_header) + sizeof(cur_time));
@@ -247,11 +239,13 @@ void RoutingProtocolImpl::send_ping_msg() {
 
 void RoutingProtocolImpl::check_entries() {
 
-	unsigned short cur_time = sys->time();
+	unsigned int cur_time = sys->time();
 
 	vector<struct port_status_entry*>::iterator port_iter = port_status_table.begin();
 	while (port_iter != port_status_table.end()) {
-		std::cout<<"last update is "<<cur_time - (*port_iter)->last_update<<"\n";
+//		std::cout<<"[CE]cur_time "<<cur_time<<"\n";
+//		std::cout<<"[CE]last update "<<(*port_iter)->last_update<<"\n";
+		std::cout<<"[CE]diff "<<cur_time - (*port_iter)->last_update<<"\n";
 		if (cur_time - (*port_iter)->last_update > PORT_STATUS_TIMEOUT) {
 			updateDV_from_cost_change(
 					(*port_iter)->neighbor_id, std::numeric_limits<unsigned short>::max());
@@ -280,7 +274,7 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 		unsigned short neighbor_id, unsigned short delta) {
 
 	std::cout<<"update from cost change "<<delta<<"\n";
-	unsigned short cur_time = sys->time();
+	unsigned int cur_time = sys->time();
 
 	if (delta == std::numeric_limits<unsigned short>::max()) {
 		// update all costs in entries with nextHop as neighbor_id to infinity

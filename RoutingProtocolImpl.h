@@ -21,7 +21,7 @@ struct dv_entry {
     unsigned short cost;
     unsigned short next_hop_id;
     unsigned short port;
-    unsigned short last_update;
+    unsigned int last_update;
 };
 
 struct node_cost {
@@ -79,7 +79,9 @@ class RoutingProtocolImpl : public RoutingProtocol {
     // send ping messages
 
     void check_entries();
-    // check expired entries in port_status_table and ...
+    // check expired entries in port_status_table and dv table
+
+    void schedule_dv_update();
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
 

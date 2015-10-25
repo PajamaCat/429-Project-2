@@ -144,15 +144,7 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 				updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
 				send_DV_msg();
 			} else {	// protocol LS
-				if(en->cost != numeric_limits<unsigned short>::max()) {
-					// If there was a LS value with cost, that is not infinity,
-					// pass in the delta, not the value to update to.
-					updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
-				} else {
-					// If the LS cost was originally infinity, meaning no connection,
-					// then pass in the cost value to be updated to, directly.
-					updateLS_from_cost_change(en->neighbor_id, new_cost);
-				}
+				updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
 				send_LS_msg(port);
 			}
 		}
@@ -201,7 +193,8 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 
 		updateLSTable_from_LSP(port, source_id, (char *)packet + sizeof(struct msg_header),
 					(ntohs(header->size) - sizeof(struct msg_header) - sizeof(unsigned int))/sizeof(struct ls_entry));
-		free(packet);
+		// Flood the LS packet
+		send_LS_msg(port); 
 	}
 }
 
@@ -210,7 +203,7 @@ void RoutingProtocolImpl::updateLSTable_from_LSP(
 
 	unsigned int current_time = sys->time();
 
-	hash_map<unsigned short, struct ls_body*>::iterator i = ls_table.find(source_id);
+	hash_map<unsigned short, lsTable_val>::iterator i = ls_table.find(source_id);
 	if(i == ls_table.end()) {
 		// Did not find LSP for this source inside the LS table;
 		char *LSP_data = (char *)malloc(sizeof(struct ls_entry) * pair_count);
@@ -221,10 +214,35 @@ void RoutingProtocolImpl::updateLSTable_from_LSP(
 		this_ls_body->seq_num = seq_num;
 		this_ls_body->node_cost = LSP_data;
 
-		ls_table[source_id] = this_ls_body;
+		ls_table.insert(ls_map_pair(source_id, lsTable_val(this_ls_body, current_time)));
 
 	} else {
+		// We find an LSP for this source inside the LS table
 
+		unsigned int packet_seq_num;
+		memcpy(&packet_seq_num, body_start, sizeof(unsigned int));
+		unsigned int table_entry_seq_num = i->second.first->seq_num;
+
+		if(packet_seq_num <= table_entry_seq_num) {
+			// if we find the lsp for source_id in the lsp table, but it had a greater or equal seq number, then free this packet.
+			free((char *)body_start - sizeof(struct msg_header));
+		} else {
+
+			char *LSP_data = (char *)malloc(sizeof(struct ls_entry) * pair_count);
+			unsigned int seq_num;
+			memcpy(&seq_num, body_start, sizeof(unsigned int));
+
+			// Because we need to update the hashmap value to the new value,
+			// we will need to free the memory for the old value.
+			free(i->second.first->node_cost);
+			free(i->second.first);
+
+			ls_body *this_ls_body = (ls_body *)malloc(sizeof(struct ls_body));
+			this_ls_body->seq_num = seq_num;
+			this_ls_body->node_cost = LSP_data;
+
+			ls_table.insert(ls_map_pair(source_id, lsTable_val(this_ls_body, current_time)));
+		}
 	}
 
 }
@@ -377,6 +395,9 @@ void RoutingProtocolImpl::check_entries() {
 
 	unsigned int cur_time = sys->time();
 
+	bool send_dv_msg = false;
+	bool send_ls_msg = false;
+
 	vector<struct port_status_entry*>::iterator port_iter = port_status_table.begin();
 	while (port_iter != port_status_table.end()) {
 //		std::cout<<"[CE]cur_time "<<cur_time<<"\n";
@@ -384,27 +405,36 @@ void RoutingProtocolImpl::check_entries() {
 //		std::cout<<"[CE]port_diff "<<cur_time - (*port_iter)->last_update<<"\n";
 		if (cur_time - (*port_iter)->last_update > PORT_STATUS_TIMEOUT) {
 			std::cout<<"Erase nbr entry "<<(*port_iter)->neighbor_id<<"\n";
-			updateDV_from_cost_change(
-					(*port_iter)->neighbor_id, std::numeric_limits<unsigned short>::max());
-			remove_ft_entry_by_port((*port_iter)->port);
-			port_iter = port_status_table.erase(port_iter);
-			send_DV_msg();
+			if(protocol_type == P_DV) {
+				updateDV_from_cost_change(
+						(*port_iter)->neighbor_id, std::numeric_limits<unsigned short>::max());
+				remove_ft_entry_by_port((*port_iter)->port);
+				port_iter = port_status_table.erase(port_iter);
+				send_dv_msg = true;
+			} else { //P_LS
+				updateLS_from_cost_change(
+						(*port_iter)->neighbor_id, std::numeric_limits<unsigned short>::max());
+				remove_ft_entry_by_port((*port_iter)->port);
+				port_iter = port_status_table.erase(port_iter);
+				send_ls_msg = true;
+			}
 		} else {
 			++port_iter;
 		}
 	}
 
 	if(protocol_type == P_LS) {
-		// check Local LSP (should we check LS table, or Local LSP)
-		vector<struct ls_entry*>::iterator ls_iter = ls_neighbor_info.begin();
-		while (ls_iter != ls_neighbor_info.end()) {
-			if (cur_time - (*ls_iter)->last_update > LS_TIMEOUT) {
-				ls_iter = ls_neighbor_info.erase(ls_iter);
-				remove_ft_entry_by_dest((*ls_iter)->node_id); // is this needed?
-			} else {
-				++ls_iter;
+		// check LS Table
+
+		for (hash_map<unsigned short, lsTable_val>::iterator iter = ls_table.begin(); 
+			iter != ls_table.end(); ++iter) {
+
+			if (cur_time - (*iter).second.second > LS_TIMEOUT) {
+				// Delete this element in LS Table, so it will be used to calculate dijsktra.
+				ls_table.erase(iter); 
 			}
 		}
+
 	} else { // protocol_type == P_DV
 		// check DV table
 		vector<struct dv_entry*>::iterator dv_iter = dv_table.begin();
@@ -413,12 +443,19 @@ void RoutingProtocolImpl::check_entries() {
 				std::cout<<"Erase DV entry "<<(*dv_iter)->dest_id<<"\n";
 				dv_iter = dv_table.erase(dv_iter);
 				remove_ft_entry_by_dest((*dv_iter)->dest_id); // is this needed?
+				send_dv_msg = true;
 			} else {
 				++dv_iter;
 			}
 		}
 	}
 
+	if(send_dv_msg) {
+		send_DV_msg();
+	} 
+	if(send_ls_msg) {
+		send_LS_msg(0xffff);
+	}
 	sys->set_alarm(this, CHECK_ENTRY_INTERVAL, &instr[CHECK_ENTRY]);
 }
 
@@ -646,6 +683,10 @@ void RoutingProtocolImpl::send_LS_msg(unsigned short dont_send_to_this_port) {
 
 	 for (unsigned int i = 0; i < port_status_table.size(); i++) {
 
+	 	// Do not send to the port, where this packet came from.
+	 	if(port_status_table[i]->port == dont_send_to_this_port) {
+	 		continue;
+	 	}
 	 	// Get count of node cost pair to send
 	 	int count = 0;
 	 	for (unsigned int j = 0; j < ls_neighbor_info.size(); j++) {

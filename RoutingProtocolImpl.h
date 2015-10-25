@@ -29,6 +29,10 @@ struct ls_body {
     char *node_cost;
 };
 
+typedef pair <ls_body *, unsigned int> lsTable_val;
+
+typedef pair <unsigned short, lsTable_val> ls_map_pair;
+
 struct ls_entry {
     unsigned short node_id;
     unsigned short cost;
@@ -129,7 +133,7 @@ class RoutingProtocolImpl : public RoutingProtocol {
     vector<struct port_status_entry*> port_status_table;
     vector<struct dv_entry*> dv_table;
     vector<struct forwarding_table_entry*> forwarding_table;
-    hash_map<unsigned short, struct ls_body*> ls_table;
+    hash_map<unsigned short, lsTable_val> ls_table;
     vector<struct ls_entry*> ls_neighbor_info;
 };
 

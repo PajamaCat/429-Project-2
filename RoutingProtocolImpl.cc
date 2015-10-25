@@ -29,6 +29,9 @@ void RoutingProtocolImpl::init(unsigned short num_ports, unsigned short router_i
 	this->num_ports = num_ports;
 	this->router_id = router_id;
 	this->protocol_type = protocol_type;
+	if(protocol_type == P_LS) {
+		this->ls_seq_num = 0; // Initialize ls sequence number to be 0;
+	}
 
 	std::cout<<"My Router ID is "<<router_id<<"\n";
 	send_ping_msg();
@@ -49,7 +52,7 @@ void RoutingProtocolImpl::handle_alarm(void *data) {
 		check_entries();
 	} else if (memcmp(data, &instr[SEND_DV], sizeof(instruction)) == 0) {
 		schedule_dv_update();
-	} else if (memcmp(data, &instr[SEND_DV], sizeof(instruction)) == 0) {
+	} else if (memcmp(data, &instr[SEND_LS], sizeof(instruction)) == 0) {
 		schedule_ls_update();
 	}
 
@@ -99,12 +102,20 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 				dv_en->port = port;
 				dv_en->next_hop_id = en->neighbor_id;
 				dv_en->last_update = current_time;
-				dv_en->cost = numeric_limits<unsigned short>::max();
+				dv_en->cost = numeric_limits<unsigned short>::max(); //TODO: ask Jiafang why? why not use new_cost?
 				dv_table.push_back(dv_en);
 				std::cout<<"dv_en's next hop id "<<dv_en->next_hop_id<<"\n";
+				//TODO: why not send DV_msg here?
 			}
 		} else { // protocol LS
-
+			// Initializing for ls_neighbor_info for myself
+			if (!ls_contains_dest(en->neighbor_id)) {
+				ls_entry* ls_en = (struct ls_entry*) malloc(sizeof(struct ls_entry));
+				ls_en->node_id = en->neighbor_id;
+				ls_en->cost = new_cost;
+				ls_en->last_update = current_time;
+				ls_neighbor_info.push_back(ls_en);
+			}
 		}
 
 		// Initializing for forwarding table
@@ -123,15 +134,24 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		}
 
 
-		// update DV & FT if cost with neighbor changes
+		// update DV || LS & FT if cost with neighbor changes
 		if (new_cost != en->cost) {
 			std::cout<<"en->cost "<<en->cost<<" new_cost "<<new_cost<<" diff "<<new_cost - en->cost<<"\n";
 			if(protocol_type == P_DV) {
+				// TODO: ask jiangjiafang, should have if statment, like below.
 				updateDV_from_cost_change(en->neighbor_id, new_cost - en->cost);
 				send_DV_msg();
 			} else {	// protocol LS
-//				updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
-				send_LS_msg();
+				if(en->cost != numeric_limits<unsigned short>::max()) {
+					// If there was a LS value with cost, that is not infinity,
+					// pass in the delta, not the value to update to.
+					updateLS_from_cost_change(en->neighbor_id, new_cost - en->cost);
+				} else {
+					// If the LS cost was originally infinity, meaning no connection,
+					// then pass in the cost value to be updated to, directly.
+					updateLS_from_cost_change(en->neighbor_id, new_cost);
+				}
+				send_LS_msg(port);
 			}
 		}
 
@@ -173,8 +193,34 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 		header = (msg_header *)packet;
 		unsigned short source_id = ntohs(header->src);
 
+		updateLSTable_from_LSP(port, source_id, (char *)packet + sizeof(struct msg_header),
+					(ntohs(header->size) - sizeof(struct msg_header) - sizeof(unsigned int))/sizeof(struct ls_entry));
 		free(packet);
 	}
+}
+
+void RoutingProtocolImpl::updateLSTable_from_LSP(
+	unsigned short port, unsigned short source_id, char *body_start, int pair_count) {
+
+	unsigned int current_time = sys->time();
+
+	hash_map<unsigned short, struct ls_body*>::iterator i = ls_table.find(source_id);
+	if(i == ls_table.end()) {
+		// Did not find LSP for this source inside the LS table;
+		char *LSP_data = (char *)malloc(sizeof(struct ls_entry) * pair_count);
+		unsigned int seq_num;
+		memcpy(&seq_num, body_start, sizeof(unsigned int));
+
+		ls_body *this_ls_body = (ls_body *)malloc(sizeof(struct ls_body));
+		this_ls_body->seq_num = seq_num;
+		this_ls_body->node_cost = LSP_data;
+
+		ls_table[source_id] = this_ls_body;
+
+	} else {
+
+	}
+
 }
 
 void RoutingProtocolImpl::updateDV_from_DV_msg(
@@ -292,16 +338,27 @@ void RoutingProtocolImpl::check_entries() {
 		}
 	}
 
-
-	//TODO
-	// check DV table
-	vector<struct dv_entry*>::iterator dv_iter = dv_table.begin();
-	while (dv_iter != dv_table.end()) {
-		if (cur_time - (*dv_iter)->last_update > DV_TIMEOUT) {
-			dv_iter = dv_table.erase(dv_iter);
-			remove_ft_entry_by_dest((*dv_iter)->dest_id); // is this needed?
-		} else {
-			++dv_iter;
+	if(protocol_type == P_LS) {
+		// check Local LSP (should we check LS table, or Local LSP)
+		vector<struct ls_entry*>::iterator ls_iter = ls_neighbor_info.begin();
+		while (ls_iter != ls_neighbor_info.end()) {
+			if (cur_time - (*ls_iter)->last_update > LS_TIMEOUT) {
+				ls_iter = ls_neighbor_info.erase(ls_iter);
+				remove_ft_entry_by_dest((*ls_iter)->node_id); // is this needed?
+			} else {
+				++ls_iter;
+			}
+		}
+	} else { // protocol_type == P_DV
+		// check DV table
+		vector<struct dv_entry*>::iterator dv_iter = dv_table.begin();
+		while (dv_iter != dv_table.end()) {
+			if (cur_time - (*dv_iter)->last_update > DV_TIMEOUT) {
+				dv_iter = dv_table.erase(dv_iter);
+				remove_ft_entry_by_dest((*dv_iter)->dest_id); // is this needed?
+			} else {
+				++dv_iter;
+			}
 		}
 	}
 
@@ -340,7 +397,34 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 	}
 }
 
-void RoutingProtocolImpl::updateLS_from_cost_change() {
+void RoutingProtocolImpl::updateLS_from_cost_change(
+		unsigned short neighbor_id, unsigned short delta) {
+
+	std::cout<<"update LS from cost change "<<delta<<"\n";
+	unsigned int cur_time = sys->time();
+
+	if (delta == std::numeric_limits<unsigned short>::max()) {
+		// update ls body entry with node_id, and infinity cost
+		for (unsigned int i = 0; i < ls_neighbor_info.size(); i++) {
+			if (ls_neighbor_info[i]->node_id == neighbor_id) {
+				ls_neighbor_info[i]->cost = std::numeric_limits<unsigned short>::max();
+				ls_neighbor_info[i]->last_update = cur_time;
+				break; // there would only be one entry with this node id.
+			}
+		}
+	} else {
+		for (unsigned int i = 0; i < ls_neighbor_info.size(); i++) {
+			if (ls_neighbor_info[i]->node_id == neighbor_id) {
+				if (ls_neighbor_info[i]->cost == numeric_limits<unsigned short>::max()) {
+					ls_neighbor_info[i]->cost = delta;
+				} else {
+					ls_neighbor_info[i]->cost = ls_neighbor_info[i]->cost + delta;
+				}
+				ls_neighbor_info[i]->last_update = cur_time;
+				break; // there would only be one entry with this node id.
+			}
+		}
+	}
 
 }
 
@@ -359,6 +443,17 @@ bool RoutingProtocolImpl::dv_contains_dest(unsigned short node_id) {
 	for (unsigned int i = 0; i < dv_table.size(); i++) {
 		std::cout<<"\t"<<dv_table[i]->dest_id<<" "<<dv_table[i]->cost<<"\n";
 		if (dv_table[i]->dest_id == node_id)
+			return true;
+	}
+	return false;
+}
+
+
+bool RoutingProtocolImpl::ls_contains_dest(unsigned short node_id) {
+
+	for (unsigned int i = 0; i < ls_neighbor_info.size(); i++) {
+		std::cout<<"\t"<<ls_neighbor_info[i]->node_id<<" "<<ls_neighbor_info[i]->cost<<"\n";
+		if (ls_neighbor_info[i]->node_id == node_id)
 			return true;
 	}
 	return false;
@@ -410,7 +505,7 @@ void RoutingProtocolImpl::remove_ft_entry_by_dest(unsigned short dest) {
 	}
 }
 
-void RoutingProtocolImpl::send_DV_msg() {
+void RoutingProtocolImpl::send_DV_msg() { // TODO: ask jiangjiafang, when flood, you send this DV to where it is from as well?
 	// Build msg body
 
 	for (unsigned int i = 0; i < port_status_table.size(); i++) {
@@ -460,57 +555,54 @@ void RoutingProtocolImpl::send_DV_msg() {
 }
 
 
-void RoutingProtocolImpl::send_LS_msg() {
-	// Build msg body
+void RoutingProtocolImpl::send_LS_msg(unsigned short dont_send_to_this_port) {
+	// Build LSP msg body
 
-	// for (unsigned int i = 0; i < port_status_table.size(); i++) {
+	 for (unsigned int i = 0; i < port_status_table.size(); i++) {
 
-	// 	// Get count of node cost pair to send
-	// 	int count = 0;
-	// 	for (unsigned int j = 0; j < dv_table.size(); j++) {
-	// 		if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
-	// 			continue;
-	// 		}
-	// 		count++;
-	// 	}
-	// 	msg_header *dv_header = (msg_header *) malloc(sizeof(struct msg_header));
-	// 	dv_header->src = htons(router_id);
-	// 	dv_header->dst = htons(port_status_table[i]->neighbor_id);
-	// 	dv_header->type = DV;
-	// 	unsigned short msg_size = sizeof(struct msg_header) + sizeof(struct node_cost) * count;
-	// 	dv_header->size = htons(msg_size);
+	 	// Get count of node cost pair to send
+	 	int count = 0;
+	 	for (unsigned int j = 0; j < ls_neighbor_info.size(); j++) {
+	 		if (ls_neighbor_info[j]->cost == std::numeric_limits<unsigned short>::max()) {
+	 			continue;
+	 		}
+	 		count++;
+	 	}
+	 	msg_header *ls_header = (msg_header *) malloc(sizeof(struct msg_header));
+	 	ls_header->src = htons(router_id);
+	 	ls_header->type = LS;
+	 	unsigned short msg_size = sizeof(struct msg_header) + sizeof(struct node_cost) * count + sizeof(unsigned int);
+	 	ls_header->size = htons(msg_size);
 
-	// 	char *msg = (char *) malloc(msg_size);
-	// 	memcpy(msg, dv_header, sizeof(struct msg_header));
-	// 	free(dv_header);
+	 	char *msg = (char *) malloc(msg_size);
+	 	memcpy(msg, ls_header, sizeof(struct msg_header));
+	 	free(ls_header);
 
-	// 	count = 0; // offset in dv msg body
-	// 	for (unsigned int j = 0; j < dv_table.size(); j++) {
-	// 		if (dv_table[j]->cost == std::numeric_limits<unsigned short>::max()) {
-	// 			continue;
-	// 		}
+	 	// put seq num in packet, and increment it for the use of next round.
+	 	memcpy(msg + sizeof(struct msg_header), &ls_seq_num, sizeof(unsigned int));
+	 	ls_seq_num++;
 
-	// 		node_cost *cost_pair = (node_cost *) malloc(sizeof(struct node_cost));
-	// 		cost_pair->node_id = htons(dv_table[j]->dest_id);
-	// 		if (dv_table[j]->next_hop_id == port_status_table[i]->neighbor_id
-	// 				&& dv_table[j]->dest_id != port_status_table[i]->neighbor_id) {
-	// 			// poison reverse
-	// 			cost_pair->cost = htons(numeric_limits<unsigned short>::max());
-	// 		} else {
-	// 			// normal case
-	// 			cost_pair->cost = htons(dv_table[j]->cost);
-	// 		}
-	// 		memcpy(msg + sizeof(struct msg_header) + count * sizeof(struct node_cost), cost_pair, sizeof(struct node_cost));
-	// 		free(cost_pair);
-	// 		count++;
-	// 	}
+	 	count = 0; // offset in ls msg body
+	 	for (unsigned int j = 0; j < ls_neighbor_info.size(); j++) {
+	 		if (ls_neighbor_info[j]->cost == std::numeric_limits<unsigned short>::max()) {
+	 			continue;
+	 		}
 
-	// 	sys->send(port_status_table[i]->port, msg, msg_size);
-	// }
+	 		node_cost *cost_pair = (node_cost *) malloc(sizeof(struct node_cost));
+	 		cost_pair->node_id = htons(ls_neighbor_info[j]->node_id);
+	 		cost_pair->cost = htons(ls_neighbor_info[j]->cost);
+
+	 		memcpy(msg + sizeof(struct msg_header) + count * sizeof(struct node_cost), cost_pair, sizeof(struct node_cost));
+	 		free(cost_pair);
+	 		count++;
+	 	}
+
+	 	sys->send(port_status_table[i]->port, msg, msg_size);
+	 }
 }
 
 void RoutingProtocolImpl::schedule_ls_update() {
-	send_LS_msg();
+	send_LS_msg(0xffff); // 0xffff is a special value for port that will not be in the port table for any router.
 	sys->set_alarm(this, LS_UPDATE_INTERVAL, &instr[SEND_LS]);
 }
 

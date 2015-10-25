@@ -24,6 +24,17 @@ struct dv_entry {
     unsigned int last_update;
 };
 
+struct ls_body {
+    unsigned int seq_num;
+    char *node_cost;
+};
+
+struct ls_entry {
+    unsigned short node_id;
+    unsigned short cost;
+    unsigned int last_update;
+};
+
 struct node_cost {
     unsigned short node_id;
     unsigned short cost;
@@ -86,19 +97,20 @@ class RoutingProtocolImpl : public RoutingProtocol {
     void schedule_ls_update();
 
     void updateDV_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
-    void updateLS_from_cost_change();
+    void updateLS_from_cost_change(unsigned short neighbor_id, unsigned short update_val);
     void updateDV_from_DV_msg(unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count);
+    void updateLSTable_from_LSP(unsigned short port, unsigned short neighbor_id, char *body_start, int pair_count);
 
     void delete_from_ft(unsigned short neighbor_id, unsigned short update_val);
     // delete entry whose next hop is neighbor_id in forwarding table
 
     void send_DV_msg();
-    void send_LS_msg();
+    void send_LS_msg(unsigned short dont_send_to_this_port);
 
     port_status_entry* get_nbr_port_status_entry(unsigned short neighbor_id);
 
     bool dv_contains_dest(unsigned short node_id);
-
+    bool ls_contains_dest(unsigned short node_id);
     bool ft_contains_dest(unsigned short node_id);
 
     dv_entry* get_dv_entry_by_dest(unsigned short node_id);
@@ -113,9 +125,12 @@ class RoutingProtocolImpl : public RoutingProtocol {
     unsigned short num_ports;
     unsigned short router_id;
     eProtocolType protocol_type;
+    unsigned int ls_seq_num;
     vector<struct port_status_entry*> port_status_table;
     vector<struct dv_entry*> dv_table;
     vector<struct forwarding_table_entry*> forwarding_table;
+    hash_map<unsigned short, struct ls_body*> ls_table;
+    vector<struct ls_entry*> ls_neighbor_info;
 };
 
 #endif

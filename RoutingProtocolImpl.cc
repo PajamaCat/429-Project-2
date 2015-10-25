@@ -100,8 +100,9 @@ void RoutingProtocolImpl::recv(unsigned short port, void *packet, unsigned short
 
 		if (protocol_type == P_DV) {
 			// Initializing for distance vector
-			if (!dv_contains_dest(en->neighbor_id)) {
-				dv_entry* dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
+			dv_entry* dv_en = get_dv_entry_by_dest(en->neighbor_id);
+			if (dv_en == NULL) {
+				dv_en = (struct dv_entry*) malloc(sizeof(struct dv_entry));
 				dv_en->dest_id = en->neighbor_id;
 				dv_en->port = port;
 				dv_en->next_hop_id = en->neighbor_id;
@@ -242,7 +243,12 @@ void RoutingProtocolImpl::updateDV_from_DV_msg(
 				}
 				continue;
 			}
-			unsigned short new_cost = neighbor_cost + get_nbr_port_status_entry(neighbor_id)->cost;
+
+			port_status_entry *nbr = get_nbr_port_status_entry(neighbor_id);
+			if (nbr == NULL) {
+				continue;
+			}
+			unsigned short new_cost = neighbor_cost + nbr->cost;
 			std::cout<<"old cost is: "<<old_dv_entry->cost<<" new cost is: "<<new_cost<<"\n";
 			old_dv_entry->last_update = current_time;
 
@@ -396,6 +402,17 @@ void RoutingProtocolImpl::updateDV_from_cost_change(
 					dv_table[i]->cost = dv_table[i]->cost + delta;
 				}
 				dv_table[i]->last_update = cur_time;
+			} else if (dv_table[i]->dest_id == neighbor_id) {
+				port_status_entry *nbr = get_nbr_port_status_entry(dv_table[i]->dest_id);
+				if (dv_table[i]->cost > delta && nbr->cost == 0) {
+					dv_table[i]->cost = delta;
+					dv_table[i]->next_hop_id = neighbor_id;
+					dv_table[i]->port = nbr->port;
+					dv_table[i]->last_update = cur_time;
+					forwarding_table_entry *ft_entry = get_ft_entry_by_dest(dv_table[i]->dest_id);
+					ft_entry->next_hop_id = router_id;
+					ft_entry->port = nbr->port;
+				}
 			}
 		}
 	}

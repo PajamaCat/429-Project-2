@@ -1,0 +1,50 @@
+For Distance Vector protocol
+
+Things to test:
+1. Correct shortest path
+2. When a link dies, 
+	a. other routers won't route through this link
+	b. other routers can figure out which link died and establish a new shortest path without 
+	routing to the dead link
+	c. dead entries should expire
+3. When a link cost change,
+	a. routers on this link should detect the change and send out new DV msg
+	b. other routers should be able to update shortest route according to the cost change
+4. When a new link coming up,
+	a. its linked routers should detect this, add new nbr_entry, dv_entry and forwarding entry accordingly
+	b. new routing paths may be established
+
+Test Case Created (reference: test_case)
+[nodes]
+                                                                                                                                                                                                     
+1 2 3 4
+                                                                                                                                                                                                     
+[links]
+                                                                                                                                                                                                     
+(1,2) delay 0.050 prob 0.0
+(2,3) delay 0.020 prob 0.0
+(1,3) delay 0.010 prob 0.0
+(1,4) delay 0.010 prob 0.0
+
+[events]
+ 
+1.00    xmit (4,2)				// ensure that it goes through 4, 1, 3, 2
+5.00	xmit (2,1)				// ensure that it goes through 2, 3, 1
+30.00	linkdying (1,3)
+35.00	xmit (4,2)				// expected behavior: packet lost, nbr entry hasn't expired yet
+38.00	xmit (4,2)				// expected behavior: route to 2 via 4, 1, 2
+60.00	linkdying (1,2)
+65.00	xmit (4,2)				// expected behavior: packet lost, nbr entry hasn't expired yet
+120.00	xmit (4,2)				// expected behavior: error, no forwarding table entry for router 2
+150.00	linkcomingup (1,2)		
+150.00	linkcomingup (1,3)
+150.00	changedelay (1,3)0.080
+200.00	xmit (4,2)				// expected behavior: route to 2 via 4, 1, 2
+220.00	xmit (3,1)				// expected behavior: route to 1 via 3, 2, 1
+240.00	linkdying (2,3)
+240.00	linkdying (1,3)
+260.00	xmit (2,3)				// expected behavior: error, no forwarding table entry for router 3
+300.00	end
+
+
+                                                                                                                                                                                                     

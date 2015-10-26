@@ -33,6 +33,8 @@ typedef pair <ls_body *, unsigned int> lsTable_val;
 
 typedef pair <unsigned short, lsTable_val> ls_map_pair;
 
+typedef pair <unsigned short, unsigned short> djk_map_pair;
+
 struct ls_entry {
     unsigned short node_id;
     unsigned short cost;
@@ -123,6 +125,14 @@ class RoutingProtocolImpl : public RoutingProtocol {
 
     void remove_ft_entry_by_port(unsigned short port);
     void remove_ft_entry_by_dest(unsigned short dest);
+
+    // For LS
+    void compute_dijsktra();
+    bool pq_contains_node(vector<djk_map_pair> input_vec, unsigned short input_node_id);
+    void update_pq_cost_map_and_parent_map(hash_map<unsigned short, unsigned short> node_to_cost,
+    hash_map<unsigned short, unsigned short> node_to_parent, vector<djk_map_pair> pq, unsigned short node_id);
+    unsigned short get_min_node(vector<djk_map_pair> pq, vector<unsigned short> visited);
+    bool visited_contains_node(vector<unsigned short> input_vec, unsigned short node_id);
 
  private:
     Node *sys; // To store Node object; used to access GSR9999 interfaces 

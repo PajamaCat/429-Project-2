@@ -240,7 +240,7 @@ void RoutingProtocolImpl::updateLSTable_from_LSP(
 			this_ls_body->seq_num = seq_num;
 			this_ls_body->node_cost = LSP_data;
 
-			ls_table.insert(ls_map_pair(source_id, lsTable_val(this_ls_body, current_time)));
+ 			ls_table.insert(ls_map_pair(source_id, lsTable_val(this_ls_body, current_time)));
 		}
 	}
 
@@ -644,6 +644,96 @@ void RoutingProtocolImpl::send_LS_msg(unsigned short dont_send_to_this_port) {
 
 	 	sys->send(port_status_table[i]->port, msg, msg_size);
 	 }
+}
+
+// Compute dijsktra and update forwarding table
+void RoutingProtocolImpl::compute_dijsktra() {
+
+	hash_map<unsigned short, unsigned short> node_to_cost;
+	hash_map<unsigned short, unsigned short> node_to_parent;
+	vector<unsigned short> visited;
+	vector<djk_map_pair> pq;
+
+	visited.push_back(router_id);
+
+	unsigned int node_count = 1;
+
+	for (unsigned int i = 0; i < ls_neighbor_info.size(); i++) {
+		node_to_cost.insert(djk_map_pair(ls_neighbor_info[i]->node_id, ls_neighbor_info[i]->cost));
+		node_to_parent.insert(djk_map_pair(ls_neighbor_info[i]->node_id, router_id));
+
+		pq.push_back(djk_map_pair(ls_neighbor_info[i]->node_id, ls_neighbor_info[i]->cost));
+		node_count++;
+	}
+
+	for (hash_map<unsigned short, lsTable_val>::iterator iter = ls_table.begin(); 
+			iter != ls_table.end(); ++iter) {
+		if(pq_contains_node(pq, (*iter).first)) {
+			continue;
+		}
+
+		node_to_cost.insert(djk_map_pair((*iter).first, numeric_limits<unsigned short>::max()));
+		node_to_parent.insert(djk_map_pair((*iter).first, NULL));
+
+		pq.push_back(djk_map_pair((*iter).first, numeric_limits<unsigned short>::max()));
+		node_count++;
+	}
+
+	while(visited.size() < node_count) {
+		unsigned short this_node_id = get_min_node(pq, visited);
+		visited.push_back(this_node_id);
+
+		update_pq_cost_map_and_parent_map(node_to_cost, node_to_parent, pq, this_node_id);
+	}
+
+
+
+}
+
+void RoutingProtocolImpl::update_pq_cost_map_and_parent_map(hash_map<unsigned short, unsigned short> node_to_cost,
+	hash_map<unsigned short, unsigned short> node_to_parent, vector<djk_map_pair> pq, unsigned short node_id) {
+
+	// find all neighbor of node_id in the LS table
+	hash_map<unsigned short, lsTable_val>::iterator iter = ls_table.find(node_id); 
+
+	// NOTE: this should be easily implemented, but we are out of time.
+	// After the Dijkstra is done, use it to populate the forwarding table would finish the whole LS algorithm.
+}
+
+
+
+unsigned short RoutingProtocolImpl::get_min_node(vector<djk_map_pair> pq, vector<unsigned short> visited) {
+	unsigned short res;
+	unsigned short min_cost = numeric_limits<unsigned short>::max();
+
+	for(unsigned int i = 0; i < pq.size(); i++) {
+		if(visited_contains_node(visited, pq[i].first)) {
+			continue;
+		}
+		if(pq[i].second < min_cost) {
+			min_cost = pq[i].second;
+			res = pq[i].first;
+		}
+	}
+	return res;
+}
+
+bool RoutingProtocolImpl::visited_contains_node(vector<unsigned short> input_vec, unsigned short node_id) {
+	for (unsigned int i = 0; i < input_vec.size(); i++) {
+		if(node_id == input_vec[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool RoutingProtocolImpl::pq_contains_node(vector<djk_map_pair> input_vec, unsigned short input_node_id) {
+	for (unsigned int i = 0; i < input_vec.size(); i++) {
+		if(input_vec[i].first == input_node_id) {
+			return true;
+		}
+	}
+	return true;
 }
 
 void RoutingProtocolImpl::schedule_ls_update() {

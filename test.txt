@@ -46,5 +46,7 @@ Test Case Created (reference: test_case)
 260.00	xmit (2,3)				// expected behavior: error, no forwarding table entry for router 3
 300.00	end
 
+There's another test: test_case_complex to test whether the protocol can handle complicated
+node relationship.
 
                                                                                                                                                                                                      

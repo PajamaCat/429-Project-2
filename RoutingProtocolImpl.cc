@@ -342,7 +342,7 @@ void RoutingProtocolImpl::updateDV_from_DV_msg(
 	for (unsigned int i = 0; i < dv_table.size(); i++) {
 		if (dv_table[i]->next_hop_id == neighbor_id) {
 			if (dv_table[i]->last_update != current_time) {
-				std::cout<<"dest id "<<dv_table[i]->dest_id<<" is not included in dv_update msg.\n";
+//				std::cout<<"dest id "<<dv_table[i]->dest_id<<" is not included in dv_update msg.\n";
 				port_status_entry *nbr = get_nbr_port_status_entry(dv_table[i]->dest_id);
 				if (nbr != NULL) {
 					dv_table[i]->cost = nbr->cost;
